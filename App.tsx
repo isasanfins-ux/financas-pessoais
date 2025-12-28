@@ -101,12 +101,18 @@ const App: React.FC = () => {
       setTransactions(data);
     }, handleError("Transactions"));
 
-// Escuta de Categorias (Garante que as categorias padrão apareçam sempre)
+// Escuta de Categorias (Lógica de Fusão: Sempre mostra Padrão + Personalizadas)
     const qCats = query(collection(db, "categories"), where("uid", "==", uid));
     const unsubCats = onSnapshot(qCats, (snapshot) => {
-      const data = snapshot.docs.map(doc => doc.data().name as string);
-      // Se não houver nada no banco, forçamos o uso das categorias padrão
-      setCategories(data.length > 0 ? data : [...INITIAL_CATEGORIES]);
+      // 1. Pega o que está no banco (ex: "teste")
+      const dbCategories = snapshot.docs.map(doc => doc.data().name as string);
+      
+      // 2. Mistura com a lista oficial do constants.ts
+      // O "Set" serve para garantir que não apareça duplicado se você criar uma igual
+      const combinedCategories = Array.from(new Set([...INITIAL_CATEGORIES, ...dbCategories]));
+      
+      // 3. Salva a lista misturada e ordenada
+      setCategories(combinedCategories.sort()); 
     }, handleError("Categories"));
 
     // Escuta de Planejamento (Budgets)
