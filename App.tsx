@@ -101,11 +101,12 @@ const App: React.FC = () => {
       setTransactions(data);
     }, handleError("Transactions"));
 
-    // Escuta de Categorias
+// Escuta de Categorias (Garante que as categorias padrão apareçam sempre)
     const qCats = query(collection(db, "categories"), where("uid", "==", uid));
     const unsubCats = onSnapshot(qCats, (snapshot) => {
       const data = snapshot.docs.map(doc => doc.data().name as string);
-      setCategories(data.length > 0 ? data : INITIAL_CATEGORIES);
+      // Se não houver nada no banco, forçamos o uso das categorias padrão
+      setCategories(data.length > 0 ? data : [...INITIAL_CATEGORIES]);
     }, handleError("Categories"));
 
     // Escuta de Planejamento (Budgets)
@@ -235,7 +236,7 @@ const App: React.FC = () => {
   }
 
   if (!currentUser) {
-    return <Auth onLogin={() => {}} />;
+    return <Auth onLogin={() => window.location.reload()} />;
   }
 
   return (
