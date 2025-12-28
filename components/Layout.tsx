@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { User } from '../types';
 
@@ -28,7 +27,8 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange, onPro
     dashboard: <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>,
     investments: <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>,
     history: <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>,
-    planning: <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>
+    planning: <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>,
+    reports: <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
   };
 
   return (
@@ -46,6 +46,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange, onPro
           <NavItem id="dashboard" label="Dashboard" icon={icons.dashboard} />
           <NavItem id="investments" label="Investimentos" icon={icons.investments} />
           <NavItem id="planning" label="Planejamento" icon={icons.planning} />
+          <NavItem id="reports" label="Relatórios" icon={icons.reports} /> {/* Adicionei aqui! */}
           <NavItem id="history" label="Extrato" icon={icons.history} />
         </nav>
 
@@ -97,20 +98,10 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange, onPro
           {icons.planning}
           <span className="text-[10px] mt-1 font-semibold">Plano</span>
         </button>
-        <button
-            onClick={() => onTabChange('reports')}
-            className={`w-full p-4 rounded-2xl flex items-center gap-4 transition-all duration-300 group ${
-              activeTab === 'reports' ? 'bg-white shadow-lg shadow-[#521256]/5' : 'hover:bg-white/50'
-            }`}
-          >
-            <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${
-              activeTab === 'reports' ? 'bg-[#521256] text-white' : 'bg-white text-[#521256] group-hover:scale-110'
-            }`}>
-              {/* Ícone de Gráfico */}
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
-            </div>
-            <span className={`font-bold ${activeTab === 'reports' ? 'text-[#521256]' : 'text-[#521256]/60'}`}>Relatórios</span>
-          </button>
+        <button onClick={() => onTabChange('reports')} className={`flex flex-col items-center ${activeTab === 'reports' ? 'text-[#f170c3]' : 'text-[#521256] opacity-60'}`}>
+          {icons.reports}
+          <span className="text-[10px] mt-1 font-semibold">Relat.</span>
+        </button>
         <button onClick={() => onTabChange('history')} className={`flex flex-col items-center ${activeTab === 'history' ? 'text-[#f170c3]' : 'text-[#521256] opacity-60'}`}>
           {icons.history}
           <span className="text-[10px] mt-1 font-semibold">Extra</span>
