@@ -9,8 +9,10 @@ export const COLORS = {
 };
 
 export const INITIAL_CATEGORIES = [
-  'Alimentação',
-  'Transporte',
+  'Alimentação (mercado)',
+  'Alimentação (iFood)',
+  'Carro',
+  'Pet',
   'Lazer',
   'Saúde',
   'Moradia',
