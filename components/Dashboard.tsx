@@ -150,11 +150,16 @@ const Dashboard: React.FC<DashboardProps> = ({
     setIsLimitCalibrating(true);
   };
 
-  const saveCalibration = () => {
-    const val = parseFloat(calibrationValue) || 0;
+const saveCalibration = () => {
+    const val = parseFloat(calibrationValue.replace(',', '.')) || 0;
+    
+    // Dispara a atualização para o componente pai (App.tsx) que envia ao Firebase
     if (isBalanceCalibrating) onUpdateInitialBalance(val);
     if (isCreditCalibrating) onUpdateInitialCreditBill(val);
     if (isLimitCalibrating) onUpdateTotalCreditLimit(val);
+    
+    // Limpa tudo e fecha os modais
+    setCalibrationValue('');
     setIsBalanceCalibrating(false);
     setIsCreditCalibrating(false);
     setIsLimitCalibrating(false);
