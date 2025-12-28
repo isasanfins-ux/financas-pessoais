@@ -1,0 +1,7 @@
+{
+  "name": "Guia - Finanças com Empatia",
+  "description": "Um assistente de finanças pessoais moderno e vibrante focado em conversas naturais para organizar seus gastos e investimentos sem estresse.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
