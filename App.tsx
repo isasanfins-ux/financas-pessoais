@@ -264,7 +264,8 @@ const App: React.FC = () => {
             <div className="w-full pb-24 lg:pb-0">
               <Planning 
                 transactions={transactions} 
-                budgets={budgets} 
+                budgets={budgets}
+                categories={categories}
                 onUpdateBudget={handleUpdateBudget}
               />
             </div>
