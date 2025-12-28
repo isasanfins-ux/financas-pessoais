@@ -5,11 +5,12 @@ import { COLORS } from '../constants';
 interface PlanningProps {
   transactions: Transaction[];
   budgets: CategoryBudget[];
-  categories: string[]; // <--- Adicionei isso aqui!
+  categories: string[];
   onUpdateBudget: (category: string, newLimit: number) => void;
+  onDeleteBudget: (category: string) => void; // <--- Nova propriedade!
 }
 
-const Planning: React.FC<PlanningProps> = ({ transactions, budgets, categories, onUpdateBudget }) => {
+const Planning: React.FC<PlanningProps> = ({ transactions, budgets, categories, onUpdateBudget, onDeleteBudget }) => {
   // Estado para EDIÇÃO
   const [editingBudget, setEditingBudget] = useState<{ category: string, limit: number } | null>(null);
   
@@ -52,20 +53,17 @@ const Planning: React.FC<PlanningProps> = ({ transactions, budgets, categories, 
 
   // --- Handlers ---
 
-  // Abrir modal de EDIÇÃO
   const handleOpenEdit = (category: string, currentLimit: number) => {
     setEditingBudget({ category, limit: currentLimit });
     setLimitValue(currentLimit.toString());
   };
 
-  // Abrir modal de CRIAÇÃO
   const handleOpenNew = () => {
     setNewBudgetCategory('');
     setLimitValue('');
     setIsNewBudgetOpen(true);
   };
 
-  // Salvar (serve tanto para novo quanto para editado)
   const handleSave = () => {
     const val = parseFloat(limitValue);
     if (!val) return;
@@ -76,6 +74,12 @@ const Planning: React.FC<PlanningProps> = ({ transactions, budgets, categories, 
     } else if (newBudgetCategory) {
       onUpdateBudget(newBudgetCategory, val);
       setIsNewBudgetOpen(false);
+    }
+  };
+
+  const handleDelete = (category: string) => {
+    if (window.confirm(`Tem certeza que deseja remover o teto de gastos para "${category}"?`)) {
+      onDeleteBudget(category);
     }
   };
 
@@ -98,7 +102,6 @@ const Planning: React.FC<PlanningProps> = ({ transactions, budgets, categories, 
           {financialHealth.description}
         </p>
 
-        {/* Botão Novo Planejamento */}
         <button 
           onClick={handleOpenNew}
           className="px-6 py-3 bg-[#521256] text-white font-black rounded-full text-xs uppercase shadow-lg hover:scale-105 active:scale-95 transition-all"
@@ -121,12 +124,21 @@ const Planning: React.FC<PlanningProps> = ({ transactions, budgets, categories, 
                   <h3 className="text-lg font-black text-[#521256]">{budget.category}</h3>
                   <p className="text-xs font-bold opacity-40 uppercase">Teto Mensal</p>
                 </div>
-                <button 
-                  onClick={() => handleOpenEdit(budget.category, budget.limit)}
-                  className="text-[10px] font-black text-[#f170c3] bg-[#efd2fe]/40 px-3 py-1.5 rounded-full hover:bg-[#f170c3] hover:text-white transition-colors uppercase"
-                >
-                  Editar
-                </button>
+                <div className="flex gap-2">
+                  <button 
+                    onClick={() => handleOpenEdit(budget.category, budget.limit)}
+                    className="text-[10px] font-black text-[#f170c3] bg-[#efd2fe]/40 px-3 py-1.5 rounded-full hover:bg-[#f170c3] hover:text-white transition-colors uppercase"
+                  >
+                    Editar
+                  </button>
+                  <button 
+                    onClick={() => handleDelete(budget.category)}
+                    className="text-[10px] font-black text-[#521256]/40 bg-[#efd2fe]/20 px-3 py-1.5 rounded-full hover:bg-red-100 hover:text-red-500 transition-colors uppercase"
+                    title="Excluir Teto"
+                  >
+                    🗑️
+                  </button>
+                </div>
               </div>
 
               <div className="mb-4 flex justify-between items-end">
@@ -179,7 +191,6 @@ const Planning: React.FC<PlanningProps> = ({ transactions, budgets, categories, 
             </p>
             
             <div className="space-y-6 mb-8">
-              {/* Seletor de Categoria (Aparece só se for Novo) */}
               {isNewBudgetOpen && (
                 <div>
                   <label className="text-[10px] font-black text-[#521256]/50 uppercase tracking-widest mb-2 block">Categoria</label>
