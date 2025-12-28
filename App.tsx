@@ -5,8 +5,9 @@ import Dashboard from './components/Dashboard';
 import History from './components/History';
 import Planning from './components/Planning';
 import Investments from './components/Investments';
+import Reports from './components/Reports'; // <--- Nova Tela!
 import CategoryManagerModal from './components/CategoryManagerModal';
-import MonthSelector from './components/MonthSelector'; // Importei o novo componente
+import MonthSelector from './components/MonthSelector'; // <--- Novo Botão!
 import { Transaction, CategoryBudget, InvestmentTransaction, User } from './types';
 import { INITIAL_CATEGORIES, INITIAL_BUDGETS } from './constants';
 import { auth, db } from './lib/firebase';
@@ -24,13 +25,13 @@ const App: React.FC = () => {
   // DATA GLOBAL (Controla o app todo)
   const [currentDate, setCurrentDate] = useState(new Date());
 
-  // Dados Crus do Firebase (Tudo misturado)
+  // Dados Crus do Firebase (Histórico Completo)
   const [allTransactions, setAllTransactions] = useState<Transaction[]>([]);
   
-  // Dados Filtrados (Só o mês atual)
+  // Dados Filtrados (Apenas o mês selecionado para Dashboard/Extrato)
   const monthlyTransactions = useMemo(() => {
     return allTransactions.filter(t => {
-      // Gambiarra segura para fuso horário: adiciona hora fixa para não voltar o dia
+      // Gambiarra segura para fuso horário
       const tDate = new Date(t.date + 'T12:00:00');
       return tDate.getMonth() === currentDate.getMonth() && 
              tDate.getFullYear() === currentDate.getFullYear();
@@ -53,7 +54,7 @@ const App: React.FC = () => {
   const nextMonth = () => setCurrentDate(new Date(currentDate.setMonth(currentDate.getMonth() + 1)));
   const prevMonth = () => setCurrentDate(new Date(currentDate.setMonth(currentDate.getMonth() - 1)));
 
-  // 1. Auth
+  // 1. Auth e Load de Usuário
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (fUser) => {
       if (fUser) {
@@ -73,10 +74,11 @@ const App: React.FC = () => {
     if (!currentUser) return;
     const uid = currentUser.id;
 
+    // Transações (Traz tudo, o filtro é feito na memória no useMemo acima)
     const qTrans = query(collection(db, "transactions"), where("uid", "==", uid));
     const unsubTrans = onSnapshot(qTrans, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Transaction));
-      setAllTransactions(data); // Salvamos TUDO aqui
+      setAllTransactions(data);
     });
 
     const qCats = query(collection(db, "categories"), where("uid", "==", uid));
@@ -108,16 +110,16 @@ const App: React.FC = () => {
     return () => { unsubTrans(); unsubCats(); unsubBudgets(); unsubInv(); unsubSettings(); };
   }, [currentUser]);
 
-  // Handlers (Simplificados para caber na resposta)
+  // Handlers
   const handleLogout = async () => { await signOut(auth); setIsSettingsOpen(false); };
   const addTransaction = async (t: Omit<Transaction, 'id'>) => { if (currentUser) { await addDoc(collection(db, "transactions"), { ...t, uid: currentUser.id }); if (!categories.includes(t.category)) await addDoc(collection(db, "categories"), { name: t.category, uid: currentUser.id }); }};
   const updateTransaction = async (u: Transaction) => { if (currentUser) { const { id, ...d } = u; await updateDoc(doc(db, "transactions", id), { ...d, uid: currentUser.id }); }};
   const deleteTransaction = async (id: string) => { await deleteDoc(doc(db, "transactions", id)); };
   
-  // Investimentos & Orçamentos handlers (mantidos iguais, só encurtando visualmente)
   const addInv = async (t: any) => currentUser && addDoc(collection(db, "investment_transactions"), { ...t, uid: currentUser.id });
-  const updInv = async (u: any) => currentUser && updateDoc(doc(db, "investment_transactions", u.id), { ...u, uid: currentUser.id }); // Erro corrigido aqui: id removido do corpo
+  const updInv = async (u: any) => currentUser && updateDoc(doc(db, "investment_transactions", u.id), { ...u, uid: currentUser.id });
   const delInv = async (id: string) => deleteDoc(doc(db, "investment_transactions", id));
+  
   const updBudg = async (c: string, l: number) => { 
     if(!currentUser) return; 
     const ex = budgets.find(b => b.category === c); 
@@ -145,7 +147,7 @@ const App: React.FC = () => {
   if (authLoading) return <div className="min-h-screen bg-[#efd2fe] flex items-center justify-center">Loading...</div>;
   if (!currentUser) return <Auth onLogin={() => window.location.reload()} />;
 
-  // Selecionador de Mês Reutilizável
+  // Componente de navegação de mês (reutilizável)
   const monthSelector = (
     <MonthSelector 
       currentDate={currentDate} 
@@ -159,12 +161,12 @@ const App: React.FC = () => {
       <div className="flex flex-col h-full gap-8 relative max-w-7xl mx-auto">
         <div className="flex-1 w-full">
           
-          {/* DASHBOARD */}
+          {/* DASHBOARD (Visão do Mês) */}
           {activeTab === 'dashboard' && (
             <div className="pb-24 lg:pb-0">
-              {monthSelector} {/* <--- BOTÃO AQUI */}
+              {monthSelector}
               <Dashboard 
-                transactions={monthlyTransactions} // Passando só o mês atual!
+                transactions={monthlyTransactions} // <--- Passando filtrado
                 onAddTransaction={addTransaction}
                 categories={categories}
                 onOpenCategoryManager={() => setIsCatManagerOpen(true)}
@@ -178,10 +180,16 @@ const App: React.FC = () => {
             </div>
           )}
 
+          {/* RELATÓRIOS (Visão Anual Completa) */}
+          {activeTab === 'reports' && (
+            <div className="w-full pb-24 lg:pb-0">
+              <Reports transactions={allTransactions} /> {/* <--- Passando TUDO */}
+            </div>
+          )}
+
           {/* INVESTIMENTOS */}
           {activeTab === 'investments' && (
             <div className="w-full pb-24 lg:pb-0">
-               {/* Investimentos tem controle de data interno, então não passo o selector aqui, mas poderíamos unificar se quiser */}
               <Investments 
                 history={investmentHistory}
                 onAddTransaction={addInv}
@@ -191,12 +199,12 @@ const App: React.FC = () => {
             </div>
           )}
 
-          {/* PLANEJAMENTO */}
+          {/* PLANEJAMENTO (Visão do Mês) */}
           {activeTab === 'planning' && (
             <div className="w-full pb-24 lg:pb-0">
-              {monthSelector} {/* <--- BOTÃO AQUI */}
+              {monthSelector}
               <Planning 
-                transactions={monthlyTransactions} 
+                transactions={monthlyTransactions} // <--- Passando filtrado
                 budgets={budgets} 
                 categories={categories}
                 onUpdateBudget={updBudg}
@@ -204,12 +212,12 @@ const App: React.FC = () => {
             </div>
           )}
 
-          {/* HISTÓRICO / EXTRATO */}
+          {/* EXTRATO (Visão do Mês) */}
           {activeTab === 'history' && (
             <div className="w-full max-w-5xl mx-auto pb-24 lg:pb-0">
-              {monthSelector} {/* <--- BOTÃO AQUI */}
+              {monthSelector}
               <History 
-                transactions={monthlyTransactions} 
+                transactions={monthlyTransactions} // <--- Passando filtrado
                 onAddTransaction={addTransaction}
                 onUpdateTransaction={updateTransaction}
                 onDeleteTransaction={deleteTransaction}
@@ -221,7 +229,7 @@ const App: React.FC = () => {
         </div>
       </div>
       
-      {/* Modais de Settings e CategoryManager mantidos iguais... */}
+      {/* Modais de Sistema */}
        <CategoryManagerModal isOpen={isCatManagerOpen} onClose={() => setIsCatManagerOpen(false)} categories={categories} onRename={() => {}} onDelete={async (name) => { if (confirm(`Excluir categoria "${name}"?`)) { const q = query(collection(db, "categories"), where("uid", "==", currentUser.id), where("name", "==", name)); const snap = await getDocs(q); snap.docs.forEach(d => deleteDoc(d.ref)); }}} />
        {isSettingsOpen && ( <div className="fixed inset-0 bg-[#521256]/60 backdrop-blur-md z-[200] flex items-center justify-center p-4"> <div className="bg-white rounded-[2.5rem] w-full max-w-md p-10 shadow-2xl overflow-y-auto max-h-[90vh]"> <h3 className="text-2xl font-black text-[#521256] mb-8">Opções ⚙️</h3> <div className="space-y-4"> <button onClick={handleLogout} className="w-full p-4 bg-orange-100 text-orange-600 rounded-xl font-bold">Sair</button> <button onClick={() => setIsResetConfirmOpen(true)} className="w-full p-4 bg-red-100 text-red-600 rounded-xl font-bold">Zerar Dados</button> <button onClick={() => setIsSettingsOpen(false)} className="w-full p-4 bg-gray-100 rounded-xl font-bold">Fechar</button> </div> </div> </div> )}
        {isResetConfirmOpen && ( <div className="fixed inset-0 bg-red-600/80 z-[250] flex items-center justify-center p-4"> <div className="bg-white p-8 rounded-2xl text-center"> <h3 className="font-black text-xl mb-4">Tem certeza?</h3> <button onClick={resetAllData} className="bg-red-600 text-white px-6 py-3 rounded-xl font-bold">Sim, apagar tudo</button> <button onClick={() => setIsResetConfirmOpen(false)} className="ml-4 text-gray-500 font-bold">Cancelar</button> </div> </div> )}
