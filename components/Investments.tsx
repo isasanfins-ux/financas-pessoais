@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo } from 'react';
 import { InvestmentGoal } from '../types';
 import { COLORS } from '../constants';
@@ -10,12 +9,23 @@ interface InvestmentsProps {
   onDeleteGoal: (goalId: string) => void;
 }
 
+// Mock visual para o extrato (futuramente virá do Firebase)
+const MOCK_HISTORY = [
+  { id: '1', date: '2025-12-28', description: 'Aporte Mensal', category: 'Reserva', amount: 500.00 },
+  { id: '2', date: '2025-12-15', description: 'Rendimentos', category: 'Tesouro', amount: 12.45 },
+];
+
 const Investments: React.FC<InvestmentsProps> = ({ goals, onAddGoal, onUpdateAmount, onDeleteGoal }) => {
   const [isDepositModalOpen, setIsDepositModalOpen] = useState(false);
   const [isNewGoalModalOpen, setIsNewGoalModalOpen] = useState(false);
+  const [isAdjustModalOpen, setIsAdjustModalOpen] = useState(false); // Novo modal de ajuste
+  
   const [selectedGoalId, setSelectedGoalId] = useState<string | null>(null);
   const [inputValue, setInputValue] = useState('');
   const [newGoalData, setNewGoalData] = useState({ name: '', target: '' });
+
+  // Estado para o Mês do Extrato
+  const [currentDate, setCurrentDate] = useState(new Date());
 
   const totalPatrimony = useMemo(() => {
     return goals.reduce((acc, curr) => acc + curr.currentAmount, 0);
@@ -48,22 +58,48 @@ const Investments: React.FC<InvestmentsProps> = ({ goals, onAddGoal, onUpdateAmo
     }
   };
 
+  // Funções de Navegação do Mês
+  const nextMonth = () => {
+    setCurrentDate(new Date(currentDate.setMonth(currentDate.getMonth() + 1)));
+  };
+
+  const prevMonth = () => {
+    setCurrentDate(new Date(currentDate.setMonth(currentDate.getMonth() - 1)));
+  };
+
+  const monthLabel = currentDate.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+
   return (
     <div className="space-y-10 animate-in fade-in slide-in-from-bottom-6 duration-700 pb-10">
-      {/* Top Card: Total Patrimony */}
+      
+      {/* Top Card: Total Patrimony (Agora com botão de Editar) */}
       <div className="bg-[#e2e585] rounded-[3rem] p-10 lg:p-14 shadow-2xl shadow-[#e2e585]/20 border border-white/50 text-center relative overflow-hidden group">
         <div className="absolute top-0 right-0 w-64 h-64 bg-white/20 rounded-full -mr-20 -mt-20 blur-3xl transition-transform group-hover:scale-110"></div>
-        <span className="text-xs font-black text-[#521256]/40 uppercase tracking-[0.3em] mb-4 block">Patrimônio Total Investido 📈</span>
-        <h2 className="text-5xl lg:text-7xl font-black text-[#521256] tracking-tighter">
-          R$ {totalPatrimony.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-        </h2>
-        <div className="mt-8 flex justify-center">
-          <button 
-            onClick={() => setIsNewGoalModalOpen(true)}
-            className="px-8 py-4 bg-[#521256] text-white rounded-full font-black text-xs shadow-xl hover:scale-105 active:scale-95 transition-all uppercase tracking-widest"
-          >
-            + Nova Caixinha
-          </button>
+        
+        <div className="relative z-10">
+          <span className="text-xs font-black text-[#521256]/40 uppercase tracking-[0.3em] mb-4 block">Patrimônio Total Investido 📈</span>
+          
+          <div className="flex items-center justify-center gap-4">
+             <h2 className="text-5xl lg:text-7xl font-black text-[#521256] tracking-tighter">
+              R$ {totalPatrimony.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+            </h2>
+            <button 
+              onClick={() => setIsAdjustModalOpen(true)}
+              className="w-10 h-10 bg-white/50 hover:bg-white rounded-full flex items-center justify-center text-[#521256] shadow-sm transition-all hover:scale-110"
+              title="Ajustar Saldo Manualmente"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+            </button>
+          </div>
+
+          <div className="mt-8 flex justify-center">
+            <button 
+              onClick={() => setIsNewGoalModalOpen(true)}
+              className="px-8 py-4 bg-[#521256] text-white rounded-full font-black text-xs shadow-xl hover:scale-105 active:scale-95 transition-all uppercase tracking-widest"
+            >
+              + Nova Caixinha
+            </button>
+          </div>
         </div>
       </div>
 
@@ -125,6 +161,55 @@ const Investments: React.FC<InvestmentsProps> = ({ goals, onAddGoal, onUpdateAmo
             <p className="text-[#521256]/30 font-black">Nenhuma caixinha criada ainda. <br/> Que tal definir seu primeiro sonho hoje? 🚀</p>
           </div>
         )}
+      </div>
+
+      {/* NOVA SEÇÃO: Extrato de Investimentos */}
+      <div className="bg-white/80 rounded-[2.5rem] p-8 lg:p-10 shadow-xl shadow-[#521256]/5 border border-white/40">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8">
+          <div>
+            <h3 className="text-xl font-black text-[#521256] mb-1">Extrato de Aportes 📝</h3>
+            <p className="text-xs font-bold opacity-40 uppercase tracking-widest">Histórico de movimentações</p>
+          </div>
+          
+          <div className="flex items-center gap-4 bg-[#efd2fe]/30 p-2 rounded-2xl self-start md:self-auto">
+            <button onClick={prevMonth} className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-white text-[#521256] transition-colors">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M15 19l-7-7 7-7" /></svg>
+            </button>
+            <span className="text-sm font-black text-[#521256] min-w-[140px] text-center capitalize">{monthLabel}</span>
+            <button onClick={nextMonth} className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-white text-[#521256] transition-colors">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M9 5l7 7-7 7" /></svg>
+            </button>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          {/* Cabeçalho da Lista */}
+          <div className="grid grid-cols-12 px-6 pb-2 text-[10px] font-black uppercase tracking-widest text-[#521256]/30">
+            <div className="col-span-2">Dia</div>
+            <div className="col-span-6">Descrição/Caixinha</div>
+            <div className="col-span-4 text-right">Valor</div>
+          </div>
+
+          {/* Lista de Itens (Mockada por enquanto) */}
+          {MOCK_HISTORY.map((item) => (
+             <div key={item.id} className="grid grid-cols-12 items-center px-6 py-4 bg-white rounded-2xl border border-[#efd2fe]/50 hover:border-[#f170c3] transition-colors group cursor-default">
+               <div className="col-span-2 text-xs font-bold text-[#521256]/60">
+                 {new Date(item.date).getDate()}
+               </div>
+               <div className="col-span-6">
+                 <p className="text-sm font-black text-[#521256]">{item.description}</p>
+                 <p className="text-[10px] font-bold text-[#f170c3]">{item.category}</p>
+               </div>
+               <div className="col-span-4 text-right">
+                 <span className="text-sm font-black text-[#521256]">+ R$ {item.amount.toFixed(2)}</span>
+               </div>
+             </div>
+          ))}
+          
+          <div className="px-6 py-4 text-center text-xs font-bold text-[#521256]/40 bg-[#efd2fe]/10 rounded-2xl border border-dashed border-[#efd2fe]">
+            <span className="opacity-50">💡 Para ver mais detalhes, conecte o histórico completo.</span>
+          </div>
+        </div>
       </div>
 
       {/* Modal: Aplicar (Depósito) */}
@@ -211,6 +296,34 @@ const Investments: React.FC<InvestmentsProps> = ({ goals, onAddGoal, onUpdateAmo
           </div>
         </div>
       )}
+
+      {/* Modal: Ajuste Manual (Edição do Número Grande) */}
+      {isAdjustModalOpen && (
+        <div className="fixed inset-0 bg-[#521256]/60 backdrop-blur-md z-[200] flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-[2.5rem] w-full max-w-sm p-10 shadow-2xl animate-in zoom-in duration-300">
+            <h3 className="text-xl font-black text-[#521256] mb-2 text-center">Ajuste Rápido ⚡</h3>
+            <p className="text-xs font-bold text-[#521256]/40 mb-8 text-center leading-relaxed">
+              O saldo total é a soma das suas caixinhas. Para alterar o total, faça um aporte ou retirada em uma delas.
+            </p>
+            
+            <div className="flex flex-col gap-3">
+              <button 
+                onClick={() => { setIsAdjustModalOpen(false); setIsDepositModalOpen(true); }}
+                className="w-full py-5 bg-[#e2e585] text-[#521256] font-black rounded-2xl shadow-xl hover:scale-[1.02] active:scale-95 transition-all"
+              >
+                FAZER APORTE AGORA
+              </button>
+              <button 
+                onClick={() => setIsAdjustModalOpen(false)}
+                className="w-full py-4 text-[#521256] font-black hover:bg-[#efd2fe]/50 rounded-2xl transition-colors text-sm"
+              >
+                VOLTAR
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };
