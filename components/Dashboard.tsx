@@ -1,6 +1,5 @@
-
 import React, { useMemo, useState } from 'react';
-import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { Transaction, TransactionType, PaymentMethod } from '../types';
 import { CHART_COLORS, COLORS } from '../constants';
 import TransactionModal from './TransactionModal';
@@ -51,36 +50,6 @@ const Dashboard: React.FC<DashboardProps> = ({
     return Object.entries(summary)
       .map(([name, value]) => ({ name, value }))
       .sort((a, b) => b.value - a.value);
-  }, [transactions]);
-
-  // Process real data for the monthly income vs expenses bar chart
-  const monthlyData = useMemo(() => {
-    const summary: Record<string, { month: string, sortKey: string, receitas: number, despesas: number }> = {};
-    
-    transactions.forEach(t => {
-      const date = new Date(t.date + 'T00:00:00');
-      const monthName = date.toLocaleDateString('pt-BR', { month: 'short' });
-      const year = date.toLocaleDateString('pt-BR', { year: '2-digit' });
-      const label = `${monthName.replace('.', '')}/${year}`;
-      const sortKey = t.date.substring(0, 7); // YYYY-MM
-
-      if (!summary[sortKey]) {
-        summary[sortKey] = {
-          month: label.charAt(0).toUpperCase() + label.slice(1),
-          sortKey,
-          receitas: 0,
-          despesas: 0
-        };
-      }
-
-      if (t.type === TransactionType.INCOME) {
-        summary[sortKey].receitas += t.amount;
-      } else {
-        summary[sortKey].despesas += t.amount;
-      }
-    });
-
-    return Object.values(summary).sort((a, b) => a.sortKey.localeCompare(b.sortKey));
   }, [transactions]);
 
   const stats = useMemo(() => {
@@ -150,15 +119,11 @@ const Dashboard: React.FC<DashboardProps> = ({
     setIsLimitCalibrating(true);
   };
 
-const saveCalibration = () => {
+  const saveCalibration = () => {
     const val = parseFloat(calibrationValue.replace(',', '.')) || 0;
-    
-    // Dispara a atualização para o componente pai (App.tsx) que envia ao Firebase
     if (isBalanceCalibrating) onUpdateInitialBalance(val);
     if (isCreditCalibrating) onUpdateInitialCreditBill(val);
     if (isLimitCalibrating) onUpdateTotalCreditLimit(val);
-    
-    // Limpa tudo e fecha os modais
     setCalibrationValue('');
     setIsBalanceCalibrating(false);
     setIsCreditCalibrating(false);
@@ -189,9 +154,9 @@ const saveCalibration = () => {
     <div className="space-y-8 animate-in fade-in duration-700 pb-10">
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
         <StatCard title="Saldo Disponível" value={stats.saldo} bgColor={COLORS.BASE} onClick={openBalanceCalibration} />
-        <StatCard title="Receitas" value={stats.receitas} color={COLORS.POSITIVE} />
-        <StatCard title="Despesas Totais" value={stats.despesasTotais} />
-        <StatCard title="Fatura do Cartão" value={stats.fatura} onClick={openCreditCalibration} />
+        <StatCard title="Receitas do Mês" value={stats.receitas} color={COLORS.POSITIVE} />
+        <StatCard title="Despesas do Mês" value={stats.despesasTotais} />
+        <StatCard title="Fatura Atual" value={stats.fatura} onClick={openCreditCalibration} />
       </div>
 
       <div className="flex flex-wrap gap-4 items-center">
@@ -263,10 +228,10 @@ const saveCalibration = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
+      <div className="grid grid-cols-1 gap-8">
         <div className="bg-white/70 rounded-[2.5rem] p-10 shadow-xl shadow-[#521256]/5 border border-white/40">
           <h3 className="text-xl font-black text-[#521256] mb-8 flex items-center justify-between">
-            Análise por Categoria <span>🔎</span>
+            Análise por Categoria (Mês Atual) <span>🔎</span>
           </h3>
           <div className="h-[320px]">
             <ResponsiveContainer width="100%" height="100%">
@@ -291,26 +256,8 @@ const saveCalibration = () => {
               </PieChart>
             </ResponsiveContainer>
           </div>
-        </div>
-
-        <div className="bg-white/70 rounded-[2.5rem] p-10 shadow-xl shadow-[#521256]/5 border border-white/40">
-          <h3 className="text-xl font-black text-[#521256] mb-8 flex items-center justify-between">
-            Receitas x Despesas <span>📈</span>
-          </h3>
-          <div className="h-[320px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={monthlyData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#efd2fe" />
-                <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: '#521256', fontSize: 11, fontWeight: 'bold' }} />
-                <YAxis hide />
-                <Tooltip cursor={{ fill: '#efd2fe', opacity: 0.3 }} contentStyle={{ borderRadius: '1rem', border: 'none', boxShadow: '0 10px 25px rgba(0,0,0,0.05)' }} />
-                <Bar name="Receitas" dataKey="receitas" fill={COLORS.POSITIVE} radius={[10, 10, 0, 0]} />
-                <Bar name="Despesas" dataKey="despesas" fill={COLORS.ACCENT} radius={[10, 10, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-          {monthlyData.length === 0 && (
-            <p className="text-center text-xs opacity-40 italic -mt-8">Lançamentos aparecerão aqui mês a mês.</p>
+          {categoryData.length === 0 && (
+            <p className="text-center text-xs opacity-40 italic -mt-32">Sem gastos categorizados este mês.</p>
           )}
         </div>
       </div>
