@@ -5,9 +5,9 @@ import Dashboard from './components/Dashboard';
 import History from './components/History';
 import Planning from './components/Planning';
 import Investments from './components/Investments';
-import Reports from './components/Reports'; // <--- Nova Tela!
+import Reports from './components/Reports';
 import CategoryManagerModal from './components/CategoryManagerModal';
-import MonthSelector from './components/MonthSelector'; // <--- Novo Botão!
+import MonthSelector from './components/MonthSelector';
 import { Transaction, CategoryBudget, InvestmentTransaction, User } from './types';
 import { INITIAL_CATEGORIES, INITIAL_BUDGETS } from './constants';
 import { auth, db } from './lib/firebase';
@@ -74,7 +74,7 @@ const App: React.FC = () => {
     if (!currentUser) return;
     const uid = currentUser.id;
 
-    // Transações (Traz tudo, o filtro é feito na memória no useMemo acima)
+    // Transações
     const qTrans = query(collection(db, "transactions"), where("uid", "==", uid));
     const unsubTrans = onSnapshot(qTrans, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Transaction));
@@ -120,12 +120,22 @@ const App: React.FC = () => {
   const updInv = async (u: any) => currentUser && updateDoc(doc(db, "investment_transactions", u.id), { ...u, uid: currentUser.id });
   const delInv = async (id: string) => deleteDoc(doc(db, "investment_transactions", id));
   
+  // --- FUNÇÕES DE ORÇAMENTO (TETO) ---
   const updBudg = async (c: string, l: number) => { 
     if(!currentUser) return; 
     const ex = budgets.find(b => b.category === c); 
     if(ex?.id) await updateDoc(doc(db, "budgets", ex.id), { limit: l }); 
     else await addDoc(collection(db, "budgets"), { category: c, limit: l, uid: currentUser.id });
   };
+
+  // NOVA FUNÇÃO: Deletar Teto
+  const delBudg = async (category: string) => {
+    if(!currentUser) return;
+    const ex = budgets.find(b => b.category === category);
+    if(ex?.id) await deleteDoc(doc(db, "budgets", ex.id));
+  };
+  // -----------------------------------
+
   const updSet = async (u: any) => currentUser && setDoc(doc(db, "settings", currentUser.id), { ...u, uid: currentUser.id }, { merge: true });
 
   const resetAllData = async () => {
@@ -147,7 +157,6 @@ const App: React.FC = () => {
   if (authLoading) return <div className="min-h-screen bg-[#efd2fe] flex items-center justify-center">Loading...</div>;
   if (!currentUser) return <Auth onLogin={() => window.location.reload()} />;
 
-  // Componente de navegação de mês (reutilizável)
   const monthSelector = (
     <MonthSelector 
       currentDate={currentDate} 
@@ -166,7 +175,7 @@ const App: React.FC = () => {
             <div className="pb-24 lg:pb-0">
               {monthSelector}
               <Dashboard 
-                transactions={monthlyTransactions} // <--- Passando filtrado
+                transactions={monthlyTransactions}
                 onAddTransaction={addTransaction}
                 categories={categories}
                 onOpenCategoryManager={() => setIsCatManagerOpen(true)}
@@ -183,7 +192,7 @@ const App: React.FC = () => {
           {/* RELATÓRIOS (Visão Anual Completa) */}
           {activeTab === 'reports' && (
             <div className="w-full pb-24 lg:pb-0">
-              <Reports transactions={allTransactions} /> {/* <--- Passando TUDO */}
+              <Reports transactions={allTransactions} />
             </div>
           )}
 
@@ -204,10 +213,11 @@ const App: React.FC = () => {
             <div className="w-full pb-24 lg:pb-0">
               {monthSelector}
               <Planning 
-                transactions={monthlyTransactions} // <--- Passando filtrado
+                transactions={monthlyTransactions} 
                 budgets={budgets} 
                 categories={categories}
                 onUpdateBudget={updBudg}
+                onDeleteBudget={delBudg} // <--- Função conectada aqui!
               />
             </div>
           )}
@@ -217,7 +227,7 @@ const App: React.FC = () => {
             <div className="w-full max-w-5xl mx-auto pb-24 lg:pb-0">
               {monthSelector}
               <History 
-                transactions={monthlyTransactions} // <--- Passando filtrado
+                transactions={monthlyTransactions}
                 onAddTransaction={addTransaction}
                 onUpdateTransaction={updateTransaction}
                 onDeleteTransaction={deleteTransaction}
@@ -229,7 +239,6 @@ const App: React.FC = () => {
         </div>
       </div>
       
-      {/* Modais de Sistema */}
        <CategoryManagerModal isOpen={isCatManagerOpen} onClose={() => setIsCatManagerOpen(false)} categories={categories} onRename={() => {}} onDelete={async (name) => { if (confirm(`Excluir categoria "${name}"?`)) { const q = query(collection(db, "categories"), where("uid", "==", currentUser.id), where("name", "==", name)); const snap = await getDocs(q); snap.docs.forEach(d => deleteDoc(d.ref)); }}} />
        {isSettingsOpen && ( <div className="fixed inset-0 bg-[#521256]/60 backdrop-blur-md z-[200] flex items-center justify-center p-4"> <div className="bg-white rounded-[2.5rem] w-full max-w-md p-10 shadow-2xl overflow-y-auto max-h-[90vh]"> <h3 className="text-2xl font-black text-[#521256] mb-8">Opções ⚙️</h3> <div className="space-y-4"> <button onClick={handleLogout} className="w-full p-4 bg-orange-100 text-orange-600 rounded-xl font-bold">Sair</button> <button onClick={() => setIsResetConfirmOpen(true)} className="w-full p-4 bg-red-100 text-red-600 rounded-xl font-bold">Zerar Dados</button> <button onClick={() => setIsSettingsOpen(false)} className="w-full p-4 bg-gray-100 rounded-xl font-bold">Fechar</button> </div> </div> </div> )}
        {isResetConfirmOpen && ( <div className="fixed inset-0 bg-red-600/80 z-[250] flex items-center justify-center p-4"> <div className="bg-white p-8 rounded-2xl text-center"> <h3 className="font-black text-xl mb-4">Tem certeza?</h3> <button onClick={resetAllData} className="bg-red-600 text-white px-6 py-3 rounded-xl font-bold">Sim, apagar tudo</button> <button onClick={() => setIsResetConfirmOpen(false)} className="ml-4 text-gray-500 font-bold">Cancelar</button> </div> </div> )}
