@@ -55,3 +55,12 @@ export interface ChatMessage {
   content: string;
   image?: string;
 }
+
+export interface InvestmentTransaction {
+  id: string;
+  uid?: string;
+  description: string;
+  amount: number;
+  date: string;
+  type: 'deposit' | 'withdrawal';
+}
