@@ -26,7 +26,16 @@ const History: React.FC<HistoryProps> = ({
   const [editingTransaction, setEditingTransaction] = useState<Transaction | undefined>(undefined);
   const [itemToDelete, setItemToDelete] = useState<string | null>(null);
 
-  const sorted = [...transactions].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  // CORREÇÃO 1: Ordenação mais estável (compara o texto da data direto)
+  // Isso garante que dia 29 fique sempre acima do dia 28
+  const sorted = [...transactions].sort((a, b) => {
+    const dateComparison = b.date.localeCompare(a.date);
+    // Se as datas forem iguais, mantém a ordem de chegada (opcional, mas ajuda na estabilidade)
+    if (dateComparison === 0) {
+      return 0; 
+    }
+    return dateComparison;
+  });
 
   const handleOpenModal = (type: TransactionType, transaction?: Transaction) => {
     setModalType(type);
@@ -97,7 +106,10 @@ const History: React.FC<HistoryProps> = ({
                 {t.isRecurring && <span className="text-[10px] bg-[#efd2fe] px-2 py-0.5 rounded-full font-black text-[#521256]/60">FIXO</span>}
               </div>
               <div className="flex items-center gap-2">
-                <p className="text-[10px] opacity-50 uppercase font-black text-[#521256] tracking-widest">{t.category} • {new Date(t.date).toLocaleDateString('pt-BR')}</p>
+                {/* CORREÇÃO 2: Adicionei o 'T12:00:00' para travar a data no meio-dia e evitar o fuso horário voltar o dia */}
+                <p className="text-[10px] opacity-50 uppercase font-black text-[#521256] tracking-widest">
+                  {t.category} • {new Date(t.date + 'T12:00:00').toLocaleDateString('pt-BR')}
+                </p>
                 <span className="text-[10px] opacity-40 font-bold" title={t.paymentMethod}>
                   {getMethodIcon(t.paymentMethod)} {t.paymentMethod}
                 </span>
@@ -105,7 +117,6 @@ const History: React.FC<HistoryProps> = ({
             </div>
 
             <div className="flex flex-col items-end gap-2 shrink-0">
-              {/* AQUI ESTÁ A MUDANÇA NAS CORES! 🎨 */}
               <div className={`text-sm lg:text-base font-black ${t.type === TransactionType.INCOME ? 'text-lime-600' : 'text-red-500'}`}>
                 {t.type === TransactionType.INCOME ? '+' : '-'} R$ {t.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
               </div>
