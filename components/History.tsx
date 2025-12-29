@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Transaction, TransactionType, PaymentMethod } from '../types';
 import TransactionModal from './TransactionModal';
@@ -106,7 +105,8 @@ const History: React.FC<HistoryProps> = ({
             </div>
 
             <div className="flex flex-col items-end gap-2 shrink-0">
-              <div className={`text-sm lg:text-base font-black ${t.type === TransactionType.INCOME ? 'text-green-600' : 'text-[#521256]'}`}>
+              {/* AQUI ESTÁ A MUDANÇA NAS CORES! 🎨 */}
+              <div className={`text-sm lg:text-base font-black ${t.type === TransactionType.INCOME ? 'text-lime-600' : 'text-red-500'}`}>
                 {t.type === TransactionType.INCOME ? '+' : '-'} R$ {t.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
               </div>
               
