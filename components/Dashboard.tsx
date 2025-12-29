@@ -47,8 +47,16 @@ const Dashboard: React.FC<DashboardProps> = ({
     expenses.forEach(t => {
       summary[t.category] = (summary[t.category] || 0) + t.amount;
     });
+    
+    // Calcula o total para a porcentagem
+    const total = Object.values(summary).reduce((a, b) => a + b, 0);
+
     return Object.entries(summary)
-      .map(([name, value]) => ({ name, value }))
+      .map(([name, value]) => ({ 
+        name, 
+        value,
+        percent: total > 0 ? (value / total) * 100 : 0 
+      }))
       .sort((a, b) => b.value - a.value);
   }, [transactions]);
 
@@ -229,38 +237,67 @@ const Dashboard: React.FC<DashboardProps> = ({
       </div>
 
       <div className="grid grid-cols-1 gap-8">
+        {/* GRÁFICO DE PIZZA COM LEGENDA LATERAL */}
         <div className="bg-white/70 rounded-[2.5rem] p-10 shadow-xl shadow-[#521256]/5 border border-white/40">
           <h3 className="text-xl font-black text-[#521256] mb-8 flex items-center justify-between">
             Análise por Categoria (Mês Atual) <span>🔎</span>
           </h3>
-          <div className="h-[320px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={categoryData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={75}
-                  outerRadius={120}
-                  paddingAngle={8}
-                  dataKey="value"
-                  stroke="none"
-                >
-                  {categoryData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip 
-                  contentStyle={{ borderRadius: '1.2rem', border: 'none', boxShadow: '0 10px 25px rgba(0,0,0,0.05)', padding: '0.8rem' }}
-                  // LINHA NOVA ABAIXO: Formata o valor e o nome
-                  formatter={(value: number) => [`R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 'Valor']}
-                />
-              </PieChart>
-            </ResponsiveContainer>
+          
+          <div className="flex flex-col lg:flex-row items-center gap-8 lg:gap-12">
+            {/* O Gráfico */}
+            <div className="h-[300px] w-full lg:w-1/2">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={categoryData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={70}
+                    outerRadius={110}
+                    paddingAngle={5}
+                    dataKey="value"
+                    stroke="none"
+                  >
+                    {categoryData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip 
+                    contentStyle={{ borderRadius: '1.2rem', border: 'none', boxShadow: '0 10px 25px rgba(0,0,0,0.05)', padding: '0.8rem' }}
+                    // AQUI ESTÁ A MÁGICA DO NOME NO MOUSE:
+                    formatter={(value: number, name: string) => [`R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, name]}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+
+            {/* A "Listinha" Lateral (Legenda) */}
+            <div className="w-full lg:w-1/2 space-y-3 lg:max-h-[300px] lg:overflow-y-auto pr-2 custom-scrollbar">
+              {categoryData.map((entry, index) => (
+                <div key={index} className="flex items-center justify-between p-3 rounded-2xl hover:bg-white/50 transition-colors">
+                  <div className="flex items-center gap-3">
+                    <div 
+                      className="w-4 h-4 rounded-full shadow-sm" 
+                      style={{ backgroundColor: CHART_COLORS[index % CHART_COLORS.length] }}
+                    ></div>
+                    <div>
+                      <p className="text-xs font-black text-[#521256]">{entry.name}</p>
+                      <p className="text-[10px] font-bold opacity-40">{entry.percent.toFixed(1)}%</p>
+                    </div>
+                  </div>
+                  <span className="text-sm font-black text-[#521256]">
+                    R$ {entry.value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                  </span>
+                </div>
+              ))}
+              
+              {categoryData.length === 0 && (
+                <div className="text-center py-4 w-full">
+                  <p className="text-xs opacity-40 italic">Nenhum dado para exibir.</p>
+                </div>
+              )}
+            </div>
           </div>
-          {categoryData.length === 0 && (
-            <p className="text-center text-xs opacity-40 italic -mt-32">Sem gastos categorizados este mês.</p>
-          )}
         </div>
       </div>
 
