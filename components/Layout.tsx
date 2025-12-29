@@ -36,17 +36,18 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange, onPro
       {/* Sidebar - Desktop */}
       <aside className="hidden lg:flex flex-col w-72 h-screen sticky top-0 bg-white/20 backdrop-blur-xl border-r border-white/30 p-8 z-40">
         <div className="mb-12">
-          <h1 className="text-3xl font-bold text-[#521256] flex items-center gap-2">
-            Guia <span className="text-[#f170c3]">✨</span>
+          {/* MUDANÇA AQUI: Título e Subtítulo atualizados */}
+          <h1 className="text-2xl font-bold text-[#521256] flex flex-wrap items-center gap-2 leading-tight">
+            Guia de finanças pessoais <span className="text-[#f170c3]">✨</span>
           </h1>
-          <p className="text-sm opacity-70 mt-2 font-medium">Finanças com Empatia</p>
+          <p className="text-xs opacity-70 mt-2 font-bold uppercase tracking-widest">Controle & Organização</p>
         </div>
 
         <nav className="flex-1 space-y-2">
           <NavItem id="dashboard" label="Dashboard" icon={icons.dashboard} />
           <NavItem id="investments" label="Investimentos" icon={icons.investments} />
           <NavItem id="planning" label="Planejamento" icon={icons.planning} />
-          <NavItem id="reports" label="Relatórios" icon={icons.reports} /> {/* Adicionei aqui! */}
+          <NavItem id="reports" label="Relatórios" icon={icons.reports} />
           <NavItem id="history" label="Extrato" icon={icons.history} />
         </nav>
 
@@ -67,7 +68,11 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange, onPro
       {/* Header - Mobile Only */}
       <header className="lg:hidden p-6 pb-2 flex items-center justify-between sticky top-0 bg-[#efd2fe]/90 backdrop-blur-sm z-20">
         <div>
-          <h1 className="text-2xl font-bold text-[#521256]">Guia ✨</h1>
+          {/* MUDANÇA AQUI: Título e Subtítulo atualizados para Mobile */}
+          <h1 className="text-lg font-bold text-[#521256] flex items-center gap-1">
+            Guia de finanças pessoais <span className="text-[#f170c3]">✨</span>
+          </h1>
+          <p className="text-[10px] opacity-70 font-bold uppercase tracking-widest">Controle & Organização</p>
         </div>
         <button 
           onClick={onProfileClick}
