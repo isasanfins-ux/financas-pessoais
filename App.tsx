@@ -81,23 +81,27 @@ const App: React.FC = () => {
       setAllTransactions(data);
     });
 
+    // Categorias
     const qCats = query(collection(db, "categories"), where("uid", "==", uid));
     const unsubCats = onSnapshot(qCats, (snapshot) => {
       const dbCategories = snapshot.docs.map(doc => doc.data().name as string);
       setCategories(Array.from(new Set([...INITIAL_CATEGORIES, ...dbCategories])).sort());
     });
 
+    // Orçamentos (CORREÇÃO AQUI: Removemos o fallback para INITIAL_BUDGETS)
     const qBudgets = query(collection(db, "budgets"), where("uid", "==", uid));
     const unsubBudgets = onSnapshot(qBudgets, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as unknown as CategoryBudget));
-      setBudgets(data.length > 0 ? data : (INITIAL_BUDGETS as CategoryBudget[]));
+      setBudgets(data); // Agora mostra apenas o que está realmente no banco!
     });
 
+    // Investimentos
     const qInv = query(collection(db, "investment_transactions"), where("uid", "==", uid));
     const unsubInv = onSnapshot(qInv, (snapshot) => {
       setInvestmentHistory(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as InvestmentTransaction)));
     });
 
+    // Configurações
     const unsubSettings = onSnapshot(doc(db, "settings", uid), (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
@@ -217,7 +221,7 @@ const App: React.FC = () => {
                 budgets={budgets} 
                 categories={categories}
                 onUpdateBudget={updBudg}
-                onDeleteBudget={delBudg} // <--- Função conectada aqui!
+                onDeleteBudget={delBudg} // <--- Conectado aqui
               />
             </div>
           )}
