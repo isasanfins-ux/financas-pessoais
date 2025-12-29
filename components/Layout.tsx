@@ -38,7 +38,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange, onPro
         <div className="mb-12">
           {/* MUDANÇA AQUI: Título e Subtítulo atualizados */}
           <h1 className="text-2xl font-bold text-[#521256] flex flex-wrap items-center gap-2 leading-tight">
-            Guia de finanças pessoais <span className="text-[#f170c3]">✨</span>
+            Guia de finanças pessoais ✨<span className="text-[#f170c3]"> </span>
           </h1>
           <p className="text-xs opacity-70 mt-2 font-bold uppercase tracking-widest">Controle & Organização</p>
         </div>
