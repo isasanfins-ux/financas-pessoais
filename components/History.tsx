@@ -26,15 +26,23 @@ const History: React.FC<HistoryProps> = ({
   const [editingTransaction, setEditingTransaction] = useState<Transaction | undefined>(undefined);
   const [itemToDelete, setItemToDelete] = useState<string | null>(null);
 
-  // CORREÇÃO 1: Ordenação mais estável (compara o texto da data direto)
-  // Isso garante que dia 29 fique sempre acima do dia 28
+  // 1. ORDENAÇÃO INTELIGENTE 🧠
+  // Primeiro organiza por DATA. Se empatar, organiza por QUEM FOI CRIADO POR ÚLTIMO.
   const sorted = [...transactions].sort((a, b) => {
-    const dateComparison = b.date.localeCompare(a.date);
-    // Se as datas forem iguais, mantém a ordem de chegada (opcional, mas ajuda na estabilidade)
-    if (dateComparison === 0) {
-      return 0; 
+    // Compara as datas (Texto YYYY-MM-DD)
+    const dateCompare = b.date.localeCompare(a.date);
+    
+    // Se as datas forem diferentes, retorna a ordem de data
+    if (dateCompare !== 0) {
+      return dateCompare;
     }
-    return dateComparison;
+
+    // Se as datas forem iguais, desempatamos pelo 'createdAt' (quem tem maior timestamp é mais novo)
+    // Usamos 'as any' para não travar caso suas transações antigas não tenham esse campo ainda
+    const createdA = (a as any).createdAt || 0;
+    const createdB = (b as any).createdAt || 0;
+    
+    return createdB - createdA;
   });
 
   const handleOpenModal = (type: TransactionType, transaction?: Transaction) => {
@@ -47,6 +55,7 @@ const History: React.FC<HistoryProps> = ({
     if (editingTransaction) {
       onUpdateTransaction({ ...editingTransaction, ...t } as Transaction);
     } else {
+      // 2. CRIAÇÃO COM CARIMBO DE TEMPO ⏰
       const newTransaction: Transaction = {
         id: Math.random().toString(36).substring(7),
         description: t.description!,
@@ -55,8 +64,11 @@ const History: React.FC<HistoryProps> = ({
         type: t.type!,
         paymentMethod: t.paymentMethod || PaymentMethod.DEBIT,
         isRecurring: t.isRecurring || false,
-        date: t.date!
-      };
+        date: t.date!,
+        // Adicionamos isso aqui para saber a ordem exata de criação:
+        createdAt: Date.now() 
+      } as Transaction; // Forçamos o tipo para aceitar o campo novo
+      
       onAddTransaction(newTransaction);
     }
   };
@@ -106,7 +118,7 @@ const History: React.FC<HistoryProps> = ({
                 {t.isRecurring && <span className="text-[10px] bg-[#efd2fe] px-2 py-0.5 rounded-full font-black text-[#521256]/60">FIXO</span>}
               </div>
               <div className="flex items-center gap-2">
-                {/* CORREÇÃO 2: Adicionei o 'T12:00:00' para travar a data no meio-dia e evitar o fuso horário voltar o dia */}
+                {/* 3. DATA CORRIGIDA VISUALMENTE (Com T12:00:00) */}
                 <p className="text-[10px] opacity-50 uppercase font-black text-[#521256] tracking-widest">
                   {t.category} • {new Date(t.date + 'T12:00:00').toLocaleDateString('pt-BR')}
                 </p>
