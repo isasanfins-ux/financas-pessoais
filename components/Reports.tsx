@@ -69,6 +69,8 @@ const Reports: React.FC<ReportsProps> = ({ transactions }) => {
               <Tooltip 
                 cursor={{ fill: '#efd2fe', opacity: 0.3 }}
                 contentStyle={{ borderRadius: '1rem', border: 'none', boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }}
+                // LINHA NOVA ABAIXO: Formata o valor para Real (R$)
+                formatter={(value: number) => [`R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, '']}
               />
               <Legend 
                 verticalAlign="top" 
