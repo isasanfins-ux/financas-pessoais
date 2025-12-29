@@ -252,6 +252,8 @@ const Dashboard: React.FC<DashboardProps> = ({
                 </Pie>
                 <Tooltip 
                   contentStyle={{ borderRadius: '1.2rem', border: 'none', boxShadow: '0 10px 25px rgba(0,0,0,0.05)', padding: '0.8rem' }}
+                  // LINHA NOVA ABAIXO: Formata o valor e o nome
+                  formatter={(value: number) => [`R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, 'Valor']}
                 />
               </PieChart>
             </ResponsiveContainer>
