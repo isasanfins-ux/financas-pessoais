@@ -34,6 +34,9 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalType, setModalType] = useState<TransactionType>(TransactionType.EXPENSE);
   
+  // Estado para ver detalhes da categoria
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+
   // Calibration Modals State
   const [isBalanceCalibrating, setIsBalanceCalibrating] = useState(false);
   const [isCreditCalibrating, setIsCreditCalibrating] = useState(false);
@@ -48,7 +51,6 @@ const Dashboard: React.FC<DashboardProps> = ({
       summary[t.category] = (summary[t.category] || 0) + t.amount;
     });
     
-    // Calcula o total para a porcentagem
     const total = Object.values(summary).reduce((a, b) => a + b, 0);
 
     return Object.entries(summary)
@@ -92,6 +94,14 @@ const Dashboard: React.FC<DashboardProps> = ({
   }, [transactions, initialBalance, initialCreditBill, totalCreditLimit]);
 
   const progressPercentage = (stats.fatura / stats.limiteTotal) * 100;
+
+  // Filtra as transações da categoria selecionada para exibir no modal
+  const categoryTransactions = useMemo(() => {
+    if (!selectedCategory) return [];
+    return transactions
+      .filter(t => t.category === selectedCategory && t.type === TransactionType.EXPENSE)
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [selectedCategory, transactions]);
 
   const handleOpenModal = (type: TransactionType) => {
     setModalType(type);
@@ -237,7 +247,6 @@ const Dashboard: React.FC<DashboardProps> = ({
       </div>
 
       <div className="grid grid-cols-1 gap-8">
-        {/* GRÁFICO DE PIZZA COM LEGENDA LATERAL */}
         <div className="bg-white/70 rounded-[2.5rem] p-10 shadow-xl shadow-[#521256]/5 border border-white/40">
           <h3 className="text-xl font-black text-[#521256] mb-8 flex items-center justify-between">
             Análise por Categoria (Mês Atual) <span>🔎</span>
@@ -264,30 +273,36 @@ const Dashboard: React.FC<DashboardProps> = ({
                   </Pie>
                   <Tooltip 
                     contentStyle={{ borderRadius: '1.2rem', border: 'none', boxShadow: '0 10px 25px rgba(0,0,0,0.05)', padding: '0.8rem' }}
-                    // AQUI ESTÁ A MÁGICA DO NOME NO MOUSE:
                     formatter={(value: number, name: string) => [`R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, name]}
                   />
                 </PieChart>
               </ResponsiveContainer>
             </div>
 
-            {/* A "Listinha" Lateral (Legenda) */}
+            {/* A "Listinha" Lateral (Legenda) - AGORA CLICÁVEL 👆 */}
             <div className="w-full lg:w-1/2 space-y-3 lg:max-h-[300px] lg:overflow-y-auto pr-2 custom-scrollbar">
               {categoryData.map((entry, index) => (
-                <div key={index} className="flex items-center justify-between p-3 rounded-2xl hover:bg-white/50 transition-colors">
+                <div 
+                  key={index} 
+                  onClick={() => setSelectedCategory(entry.name)} // <--- CLIQUE AQUI
+                  className="flex items-center justify-between p-3 rounded-2xl hover:bg-white transition-colors cursor-pointer group border border-transparent hover:border-[#f170c3]/20 hover:shadow-md"
+                >
                   <div className="flex items-center gap-3">
                     <div 
                       className="w-4 h-4 rounded-full shadow-sm" 
                       style={{ backgroundColor: CHART_COLORS[index % CHART_COLORS.length] }}
                     ></div>
                     <div>
-                      <p className="text-xs font-black text-[#521256]">{entry.name}</p>
+                      <p className="text-xs font-black text-[#521256] group-hover:text-[#f170c3] transition-colors">{entry.name}</p>
                       <p className="text-[10px] font-bold opacity-40">{entry.percent.toFixed(1)}%</p>
                     </div>
                   </div>
-                  <span className="text-sm font-black text-[#521256]">
-                    R$ {entry.value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                  </span>
+                  <div className="text-right">
+                    <span className="text-sm font-black text-[#521256]">
+                        R$ {entry.value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    </span>
+                    <p className="text-[9px] font-bold text-[#f170c3] opacity-0 group-hover:opacity-100 transition-opacity">Ver detalhes</p>
+                  </div>
                 </div>
               ))}
               
@@ -310,6 +325,47 @@ const Dashboard: React.FC<DashboardProps> = ({
         onAddCategory={onAddCategory}
         onOpenCategoryManager={onOpenCategoryManager}
       />
+
+      {/* NOVO MODAL DE DETALHES DA CATEGORIA */}
+      {selectedCategory && (
+        <div className="fixed inset-0 bg-[#521256]/60 backdrop-blur-md z-[150] flex items-center justify-center p-4 animate-in fade-in duration-200">
+            <div className="bg-white rounded-[2.5rem] w-full max-w-md p-8 shadow-2xl animate-in zoom-in duration-300 max-h-[80vh] flex flex-col">
+                <div className="flex justify-between items-center mb-6">
+                    <div>
+                        <p className="text-[10px] font-black opacity-40 uppercase tracking-widest">Detalhes da Categoria</p>
+                        <h3 className="text-2xl font-black text-[#521256]">{selectedCategory}</h3>
+                    </div>
+                    <button onClick={() => setSelectedCategory(null)} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
+                        <svg className="w-6 h-6 text-[#521256]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                    </button>
+                </div>
+                
+                <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-3">
+                    {categoryTransactions.map(t => (
+                        <div key={t.id} className="flex justify-between items-center p-4 bg-[#efd2fe]/20 rounded-2xl border border-transparent hover:border-[#f170c3]/30 transition-colors">
+                            <div>
+                                <p className="font-bold text-[#521256] text-sm">{t.description}</p>
+                                <p className="text-[10px] opacity-50 font-bold uppercase">{new Date(t.date + 'T12:00:00').toLocaleDateString('pt-BR')}</p>
+                            </div>
+                            <span className="font-black text-red-500 text-sm">
+                                - R$ {t.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                            </span>
+                        </div>
+                    ))}
+                    {categoryTransactions.length === 0 && (
+                        <p className="text-center text-sm opacity-40 italic py-4">Nenhuma transação encontrada.</p>
+                    )}
+                </div>
+
+                <div className="mt-6 pt-4 border-t border-gray-100 flex justify-between items-end">
+                    <span className="text-xs font-bold opacity-50 uppercase">Total na Categoria</span>
+                    <span className="text-xl font-black text-[#521256]">
+                        R$ {categoryTransactions.reduce((acc, curr) => acc + curr.amount, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    </span>
+                </div>
+            </div>
+        </div>
+      )}
 
       {/* Calibration Modals */}
       {(isBalanceCalibrating || isCreditCalibrating || isLimitCalibrating) && (
