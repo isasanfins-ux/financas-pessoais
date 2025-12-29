@@ -11,7 +11,6 @@ import MonthSelector from './components/MonthSelector';
 import { Transaction, CategoryBudget, InvestmentTransaction, User } from './types';
 import { INITIAL_CATEGORIES, INITIAL_BUDGETS } from './constants';
 import { auth, db } from './lib/firebase';
-// Adicionei updateProfile e updatePassword aqui
 import { onAuthStateChanged, signOut, updateProfile, updatePassword } from 'firebase/auth';
 import { 
   collection, query, where, onSnapshot, addDoc, updateDoc, deleteDoc, 
@@ -23,19 +22,15 @@ const App: React.FC = () => {
   const [authLoading, setAuthLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('dashboard');
   
-  // --- ESTADOS DO PERFIL (NOVOS) ---
+  // --- ESTADOS DO PERFIL ---
   const [editName, setEditName] = useState('');
   const [editAvatar, setEditAvatar] = useState('');
   const [newPassword, setNewPassword] = useState('');
-  // ---------------------------------
+  // -------------------------
 
-  // DATA GLOBAL (Controla o app todo)
   const [currentDate, setCurrentDate] = useState(new Date());
-
-  // Dados Crus do Firebase (Histórico Completo)
   const [allTransactions, setAllTransactions] = useState<Transaction[]>([]);
   
-  // Dados Filtrados
   const monthlyTransactions = useMemo(() => {
     return allTransactions.filter(t => {
       const tDate = new Date(t.date + 'T12:00:00');
@@ -56,11 +51,9 @@ const App: React.FC = () => {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isResetConfirmOpen, setIsResetConfirmOpen] = useState(false);
 
-  // Navegação de Mês
   const nextMonth = () => setCurrentDate(new Date(currentDate.setMonth(currentDate.getMonth() + 1)));
   const prevMonth = () => setCurrentDate(new Date(currentDate.setMonth(currentDate.getMonth() - 1)));
 
-  // 1. Auth e Load de Usuário
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (fUser) => {
       if (fUser) {
@@ -69,7 +62,6 @@ const App: React.FC = () => {
           if (userDoc.exists()) {
             const userData = userDoc.data() as User;
             setCurrentUser(userData);
-            // Preenche o formulário de edição
             setEditName(userData.name);
             setEditAvatar(userData.avatar);
           } else {
@@ -79,7 +71,6 @@ const App: React.FC = () => {
             setEditAvatar(newUser.avatar);
           }
         } catch (err) { 
-           // Fallback seguro
            const fallbackUser = { id: fUser.uid, name: fUser.displayName || 'Estrela', email: fUser.email || '', avatar: fUser.photoURL || 'https://picsum.photos/seed/guia/100' };
            setCurrentUser(fallbackUser);
            setEditName(fallbackUser.name);
@@ -93,39 +84,33 @@ const App: React.FC = () => {
     return () => unsubscribe();
   }, []);
 
-  // 2. Data Sync
   useEffect(() => {
     if (!currentUser) return;
     const uid = currentUser.id;
 
-    // Transações
     const qTrans = query(collection(db, "transactions"), where("uid", "==", uid));
     const unsubTrans = onSnapshot(qTrans, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Transaction));
       setAllTransactions(data);
     });
 
-    // Categorias
     const qCats = query(collection(db, "categories"), where("uid", "==", uid));
     const unsubCats = onSnapshot(qCats, (snapshot) => {
       const dbCategories = snapshot.docs.map(doc => doc.data().name as string);
       setCategories(Array.from(new Set([...INITIAL_CATEGORIES, ...dbCategories])).sort());
     });
 
-    // Orçamentos
     const qBudgets = query(collection(db, "budgets"), where("uid", "==", uid));
     const unsubBudgets = onSnapshot(qBudgets, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as unknown as CategoryBudget));
       setBudgets(data);
     });
 
-    // Investimentos
     const qInv = query(collection(db, "investment_transactions"), where("uid", "==", uid));
     const unsubInv = onSnapshot(qInv, (snapshot) => {
       setInvestmentHistory(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as InvestmentTransaction)));
     });
 
-    // Configurações
     const unsubSettings = onSnapshot(doc(db, "settings", uid), (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
@@ -138,19 +123,17 @@ const App: React.FC = () => {
     return () => { unsubTrans(); unsubCats(); unsubBudgets(); unsubInv(); unsubSettings(); };
   }, [currentUser]);
 
-  // --- Handlers ---
-
-  // Salvar Perfil (NOVO)
+  // --- HANDLER DE SALVAR PERFIL COM DEBUG ---
   const handleSaveProfile = async () => {
     if (!auth.currentUser || !currentUser) return;
     try {
-      // Atualiza Auth
+      // 1. Auth Profile
       await updateProfile(auth.currentUser, {
         displayName: editName,
         photoURL: editAvatar
       });
 
-      // Atualiza Firestore
+      // 2. Firestore Document (Aqui que costuma dar erro de permissão)
       await setDoc(doc(db, "users", currentUser.id), {
         name: editName,
         avatar: editAvatar,
@@ -158,21 +141,22 @@ const App: React.FC = () => {
         id: currentUser.id
       }, { merge: true });
 
-      // Atualiza Senha (se houver)
+      // 3. Password
       if (newPassword) {
+        if (newPassword.length < 6) {
+          alert("A senha precisa ter pelo menos 6 caracteres! 🔒");
+          return;
+        }
         await updatePassword(auth.currentUser, newPassword);
         alert("Senha atualizada! 🔐");
       }
 
-      alert("Perfil salvo! A página será atualizada.");
+      alert("Perfil salvo com sucesso! ✨");
       window.location.reload();
     } catch (error: any) {
-      console.error(error);
-      if (error.code === 'auth/requires-recent-login') {
-        alert("Por segurança, faça login novamente para mudar a senha.");
-      } else {
-        alert("Erro ao salvar perfil.");
-      }
+      console.error("Erro no perfil:", error);
+      // Aqui mostramos a mensagem real do erro para facilitar
+      alert(`Ops! Não foi possível salvar.\nErro: ${error.message}`);
     }
   };
 
@@ -299,11 +283,9 @@ const App: React.FC = () => {
       
       <CategoryManagerModal isOpen={isCatManagerOpen} onClose={() => setIsCatManagerOpen(false)} categories={categories} onRename={() => {}} onDelete={async (name) => { if (confirm(`Excluir categoria "${name}"?`)) { const q = query(collection(db, "categories"), where("uid", "==", currentUser.id), where("name", "==", name)); const snap = await getDocs(q); snap.docs.forEach(d => deleteDoc(d.ref)); }}} />
       
-      {/* NOVO MODAL DE PERFIL */}
       {isSettingsOpen && (
         <div className="fixed inset-0 bg-[#521256]/60 backdrop-blur-md z-[200] flex items-center justify-center p-4 animate-in fade-in duration-200">
           <div className="bg-white rounded-[2.5rem] w-full max-w-md p-8 shadow-2xl overflow-y-auto max-h-[90vh] animate-in zoom-in duration-300">
-             
              <div className="flex flex-col items-center mb-6">
                <div className="w-24 h-24 rounded-full p-1 border-2 border-[#f170c3] mb-4 relative group">
                  <img src={editAvatar || 'https://picsum.photos/seed/guia/200'} alt="Avatar" className="w-full h-full rounded-full object-cover" />
@@ -315,26 +297,13 @@ const App: React.FC = () => {
              <div className="space-y-5">
                 <div>
                   <label className="text-[10px] font-black text-[#521256]/50 uppercase tracking-widest mb-1 block">Seu Nome</label>
-                  <input 
-                    type="text" 
-                    value={editName} 
-                    onChange={(e) => setEditName(e.target.value)}
-                    className="w-full px-4 py-3 bg-[#efd2fe]/30 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#f170c3] text-[#521256] font-bold"
-                  />
+                  <input type="text" value={editName} onChange={(e) => setEditName(e.target.value)} className="w-full px-4 py-3 bg-[#efd2fe]/30 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#f170c3] text-[#521256] font-bold" />
                 </div>
-
                 <div>
                   <label className="text-[10px] font-black text-[#521256]/50 uppercase tracking-widest mb-1 block">Link da Foto (URL)</label>
-                  <input 
-                    type="text" 
-                    value={editAvatar} 
-                    onChange={(e) => setEditAvatar(e.target.value)}
-                    placeholder="https://..."
-                    className="w-full px-4 py-3 bg-[#efd2fe]/30 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#f170c3] text-[#521256] font-bold text-xs"
-                  />
+                  <input type="text" value={editAvatar} onChange={(e) => setEditAvatar(e.target.value)} placeholder="https://..." className="w-full px-4 py-3 bg-[#efd2fe]/30 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#f170c3] text-[#521256] font-bold text-xs" />
                   <p className="text-[9px] text-[#521256]/40 mt-1">Dica: Copie o link de uma imagem do Google, Pinterest ou Bitmoji.</p>
                 </div>
-
                 <div>
                   <label className="text-[10px] font-black text-[#521256]/50 uppercase tracking-widest mb-1 block">E-mail (Login)</label>
                   <div className="w-full px-4 py-3 bg-gray-100 rounded-xl text-gray-500 font-bold text-sm flex items-center gap-2">
@@ -342,37 +311,16 @@ const App: React.FC = () => {
                     {currentUser?.email}
                   </div>
                 </div>
-
                 <div className="pt-2 border-t border-[#efd2fe]">
                   <label className="text-[10px] font-black text-[#f170c3] uppercase tracking-widest mb-1 block">Alterar Senha (Opcional)</label>
-                  <input 
-                    type="password" 
-                    value={newPassword} 
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    placeholder="Nova senha..."
-                    className="w-full px-4 py-3 bg-white border-2 border-[#efd2fe] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#f170c3] text-[#521256] font-bold"
-                  />
+                  <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="Nova senha..." className="w-full px-4 py-3 bg-white border-2 border-[#efd2fe] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#f170c3] text-[#521256] font-bold" />
                 </div>
-
-                <button 
-                  onClick={handleSaveProfile} 
-                  className="w-full py-4 bg-[#521256] text-white font-black rounded-xl hover:scale-[1.02] active:scale-95 transition-all shadow-lg"
-                >
-                  SALVAR ALTERAÇÕES
-                </button>
-
+                <button onClick={handleSaveProfile} className="w-full py-4 bg-[#521256] text-white font-black rounded-xl hover:scale-[1.02] active:scale-95 transition-all shadow-lg">SALVAR ALTERAÇÕES</button>
                 <div className="grid grid-cols-2 gap-3 pt-4 border-t border-[#efd2fe]">
-                   <button onClick={handleLogout} className="py-3 bg-orange-100 text-orange-600 rounded-xl font-bold text-xs hover:bg-orange-200 transition-colors">
-                     SAIR DA CONTA
-                   </button>
-                   <button onClick={() => setIsResetConfirmOpen(true)} className="py-3 bg-red-100 text-red-600 rounded-xl font-bold text-xs hover:bg-red-200 transition-colors">
-                     ZERAR DADOS
-                   </button>
+                   <button onClick={handleLogout} className="py-3 bg-orange-100 text-orange-600 rounded-xl font-bold text-xs hover:bg-orange-200 transition-colors">SAIR DA CONTA</button>
+                   <button onClick={() => setIsResetConfirmOpen(true)} className="py-3 bg-red-100 text-red-600 rounded-xl font-bold text-xs hover:bg-red-200 transition-colors">ZERAR DADOS</button>
                 </div>
-                
-                <button onClick={() => setIsSettingsOpen(false)} className="w-full py-3 text-[#521256]/50 font-bold text-xs hover:text-[#521256]">
-                  Fechar sem salvar
-                </button>
+                <button onClick={() => setIsSettingsOpen(false)} className="w-full py-3 text-[#521256]/50 font-bold text-xs hover:text-[#521256]">Fechar sem salvar</button>
              </div>
           </div>
         </div>
