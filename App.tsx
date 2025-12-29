@@ -11,7 +11,8 @@ import MonthSelector from './components/MonthSelector';
 import { Transaction, CategoryBudget, InvestmentTransaction, User } from './types';
 import { INITIAL_CATEGORIES, INITIAL_BUDGETS } from './constants';
 import { auth, db } from './lib/firebase';
-import { onAuthStateChanged, signOut } from 'firebase/auth';
+// Adicionei updateProfile e updatePassword aqui
+import { onAuthStateChanged, signOut, updateProfile, updatePassword } from 'firebase/auth';
 import { 
   collection, query, where, onSnapshot, addDoc, updateDoc, deleteDoc, 
   doc, setDoc, getDoc, writeBatch, getDocs 
@@ -22,16 +23,21 @@ const App: React.FC = () => {
   const [authLoading, setAuthLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('dashboard');
   
+  // --- ESTADOS DO PERFIL (NOVOS) ---
+  const [editName, setEditName] = useState('');
+  const [editAvatar, setEditAvatar] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  // ---------------------------------
+
   // DATA GLOBAL (Controla o app todo)
   const [currentDate, setCurrentDate] = useState(new Date());
 
   // Dados Crus do Firebase (Histórico Completo)
   const [allTransactions, setAllTransactions] = useState<Transaction[]>([]);
   
-  // Dados Filtrados (Apenas o mês selecionado para Dashboard/Extrato)
+  // Dados Filtrados
   const monthlyTransactions = useMemo(() => {
     return allTransactions.filter(t => {
-      // Gambiarra segura para fuso horário
       const tDate = new Date(t.date + 'T12:00:00');
       return tDate.getMonth() === currentDate.getMonth() && 
              tDate.getFullYear() === currentDate.getFullYear();
@@ -60,10 +66,28 @@ const App: React.FC = () => {
       if (fUser) {
         try {
           const userDoc = await getDoc(doc(db, "users", fUser.uid));
-          if (userDoc.exists()) setCurrentUser(userDoc.data() as User);
-          else setCurrentUser({ id: fUser.uid, name: fUser.displayName || 'Estrela', email: fUser.email || '', avatar: fUser.photoURL || 'https://picsum.photos/seed/guia/100' });
-        } catch (err) { setCurrentUser({ id: fUser.uid, name: fUser.displayName || 'Estrela', email: fUser.email || '', avatar: fUser.photoURL || 'https://picsum.photos/seed/guia/100' }); }
-      } else setCurrentUser(null);
+          if (userDoc.exists()) {
+            const userData = userDoc.data() as User;
+            setCurrentUser(userData);
+            // Preenche o formulário de edição
+            setEditName(userData.name);
+            setEditAvatar(userData.avatar);
+          } else {
+            const newUser = { id: fUser.uid, name: fUser.displayName || 'Estrela', email: fUser.email || '', avatar: fUser.photoURL || 'https://picsum.photos/seed/guia/100' };
+            setCurrentUser(newUser);
+            setEditName(newUser.name);
+            setEditAvatar(newUser.avatar);
+          }
+        } catch (err) { 
+           // Fallback seguro
+           const fallbackUser = { id: fUser.uid, name: fUser.displayName || 'Estrela', email: fUser.email || '', avatar: fUser.photoURL || 'https://picsum.photos/seed/guia/100' };
+           setCurrentUser(fallbackUser);
+           setEditName(fallbackUser.name);
+           setEditAvatar(fallbackUser.avatar);
+        }
+      } else {
+        setCurrentUser(null);
+      }
       setAuthLoading(false);
     });
     return () => unsubscribe();
@@ -88,11 +112,11 @@ const App: React.FC = () => {
       setCategories(Array.from(new Set([...INITIAL_CATEGORIES, ...dbCategories])).sort());
     });
 
-    // Orçamentos (CORREÇÃO AQUI: Removemos o fallback para INITIAL_BUDGETS)
+    // Orçamentos
     const qBudgets = query(collection(db, "budgets"), where("uid", "==", uid));
     const unsubBudgets = onSnapshot(qBudgets, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as unknown as CategoryBudget));
-      setBudgets(data); // Agora mostra apenas o que está realmente no banco!
+      setBudgets(data);
     });
 
     // Investimentos
@@ -114,8 +138,46 @@ const App: React.FC = () => {
     return () => { unsubTrans(); unsubCats(); unsubBudgets(); unsubInv(); unsubSettings(); };
   }, [currentUser]);
 
-  // Handlers
+  // --- Handlers ---
+
+  // Salvar Perfil (NOVO)
+  const handleSaveProfile = async () => {
+    if (!auth.currentUser || !currentUser) return;
+    try {
+      // Atualiza Auth
+      await updateProfile(auth.currentUser, {
+        displayName: editName,
+        photoURL: editAvatar
+      });
+
+      // Atualiza Firestore
+      await setDoc(doc(db, "users", currentUser.id), {
+        name: editName,
+        avatar: editAvatar,
+        email: currentUser.email,
+        id: currentUser.id
+      }, { merge: true });
+
+      // Atualiza Senha (se houver)
+      if (newPassword) {
+        await updatePassword(auth.currentUser, newPassword);
+        alert("Senha atualizada! 🔐");
+      }
+
+      alert("Perfil salvo! A página será atualizada.");
+      window.location.reload();
+    } catch (error: any) {
+      console.error(error);
+      if (error.code === 'auth/requires-recent-login') {
+        alert("Por segurança, faça login novamente para mudar a senha.");
+      } else {
+        alert("Erro ao salvar perfil.");
+      }
+    }
+  };
+
   const handleLogout = async () => { await signOut(auth); setIsSettingsOpen(false); };
+  
   const addTransaction = async (t: Omit<Transaction, 'id'>) => { if (currentUser) { await addDoc(collection(db, "transactions"), { ...t, uid: currentUser.id }); if (!categories.includes(t.category)) await addDoc(collection(db, "categories"), { name: t.category, uid: currentUser.id }); }};
   const updateTransaction = async (u: Transaction) => { if (currentUser) { const { id, ...d } = u; await updateDoc(doc(db, "transactions", id), { ...d, uid: currentUser.id }); }};
   const deleteTransaction = async (id: string) => { await deleteDoc(doc(db, "transactions", id)); };
@@ -124,7 +186,6 @@ const App: React.FC = () => {
   const updInv = async (u: any) => currentUser && updateDoc(doc(db, "investment_transactions", u.id), { ...u, uid: currentUser.id });
   const delInv = async (id: string) => deleteDoc(doc(db, "investment_transactions", id));
   
-  // --- FUNÇÕES DE ORÇAMENTO (TETO) ---
   const updBudg = async (c: string, l: number) => { 
     if(!currentUser) return; 
     const ex = budgets.find(b => b.category === c); 
@@ -132,13 +193,11 @@ const App: React.FC = () => {
     else await addDoc(collection(db, "budgets"), { category: c, limit: l, uid: currentUser.id });
   };
 
-  // NOVA FUNÇÃO: Deletar Teto
   const delBudg = async (category: string) => {
     if(!currentUser) return;
     const ex = budgets.find(b => b.category === category);
     if(ex?.id) await deleteDoc(doc(db, "budgets", ex.id));
   };
-  // -----------------------------------
 
   const updSet = async (u: any) => currentUser && setDoc(doc(db, "settings", currentUser.id), { ...u, uid: currentUser.id }, { merge: true });
 
@@ -174,7 +233,6 @@ const App: React.FC = () => {
       <div className="flex flex-col h-full gap-8 relative max-w-7xl mx-auto">
         <div className="flex-1 w-full">
           
-          {/* DASHBOARD (Visão do Mês) */}
           {activeTab === 'dashboard' && (
             <div className="pb-24 lg:pb-0">
               {monthSelector}
@@ -193,14 +251,12 @@ const App: React.FC = () => {
             </div>
           )}
 
-          {/* RELATÓRIOS (Visão Anual Completa) */}
           {activeTab === 'reports' && (
             <div className="w-full pb-24 lg:pb-0">
               <Reports transactions={allTransactions} />
             </div>
           )}
 
-          {/* INVESTIMENTOS */}
           {activeTab === 'investments' && (
             <div className="w-full pb-24 lg:pb-0">
               <Investments 
@@ -212,7 +268,6 @@ const App: React.FC = () => {
             </div>
           )}
 
-          {/* PLANEJAMENTO (Visão do Mês) */}
           {activeTab === 'planning' && (
             <div className="w-full pb-24 lg:pb-0">
               {monthSelector}
@@ -221,12 +276,11 @@ const App: React.FC = () => {
                 budgets={budgets} 
                 categories={categories}
                 onUpdateBudget={updBudg}
-                onDeleteBudget={delBudg} // <--- Conectado aqui
+                onDeleteBudget={delBudg}
               />
             </div>
           )}
 
-          {/* EXTRATO (Visão do Mês) */}
           {activeTab === 'history' && (
             <div className="w-full max-w-5xl mx-auto pb-24 lg:pb-0">
               {monthSelector}
@@ -243,9 +297,88 @@ const App: React.FC = () => {
         </div>
       </div>
       
-       <CategoryManagerModal isOpen={isCatManagerOpen} onClose={() => setIsCatManagerOpen(false)} categories={categories} onRename={() => {}} onDelete={async (name) => { if (confirm(`Excluir categoria "${name}"?`)) { const q = query(collection(db, "categories"), where("uid", "==", currentUser.id), where("name", "==", name)); const snap = await getDocs(q); snap.docs.forEach(d => deleteDoc(d.ref)); }}} />
-       {isSettingsOpen && ( <div className="fixed inset-0 bg-[#521256]/60 backdrop-blur-md z-[200] flex items-center justify-center p-4"> <div className="bg-white rounded-[2.5rem] w-full max-w-md p-10 shadow-2xl overflow-y-auto max-h-[90vh]"> <h3 className="text-2xl font-black text-[#521256] mb-8">Opções ⚙️</h3> <div className="space-y-4"> <button onClick={handleLogout} className="w-full p-4 bg-orange-100 text-orange-600 rounded-xl font-bold">Sair</button> <button onClick={() => setIsResetConfirmOpen(true)} className="w-full p-4 bg-red-100 text-red-600 rounded-xl font-bold">Zerar Dados</button> <button onClick={() => setIsSettingsOpen(false)} className="w-full p-4 bg-gray-100 rounded-xl font-bold">Fechar</button> </div> </div> </div> )}
-       {isResetConfirmOpen && ( <div className="fixed inset-0 bg-red-600/80 z-[250] flex items-center justify-center p-4"> <div className="bg-white p-8 rounded-2xl text-center"> <h3 className="font-black text-xl mb-4">Tem certeza?</h3> <button onClick={resetAllData} className="bg-red-600 text-white px-6 py-3 rounded-xl font-bold">Sim, apagar tudo</button> <button onClick={() => setIsResetConfirmOpen(false)} className="ml-4 text-gray-500 font-bold">Cancelar</button> </div> </div> )}
+      <CategoryManagerModal isOpen={isCatManagerOpen} onClose={() => setIsCatManagerOpen(false)} categories={categories} onRename={() => {}} onDelete={async (name) => { if (confirm(`Excluir categoria "${name}"?`)) { const q = query(collection(db, "categories"), where("uid", "==", currentUser.id), where("name", "==", name)); const snap = await getDocs(q); snap.docs.forEach(d => deleteDoc(d.ref)); }}} />
+      
+      {/* NOVO MODAL DE PERFIL */}
+      {isSettingsOpen && (
+        <div className="fixed inset-0 bg-[#521256]/60 backdrop-blur-md z-[200] flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-[2.5rem] w-full max-w-md p-8 shadow-2xl overflow-y-auto max-h-[90vh] animate-in zoom-in duration-300">
+             
+             <div className="flex flex-col items-center mb-6">
+               <div className="w-24 h-24 rounded-full p-1 border-2 border-[#f170c3] mb-4 relative group">
+                 <img src={editAvatar || 'https://picsum.photos/seed/guia/200'} alt="Avatar" className="w-full h-full rounded-full object-cover" />
+               </div>
+               <h3 className="text-2xl font-black text-[#521256]">Meu Perfil 💖</h3>
+               <p className="text-xs font-bold opacity-40">Personalize sua experiência</p>
+             </div>
+
+             <div className="space-y-5">
+                <div>
+                  <label className="text-[10px] font-black text-[#521256]/50 uppercase tracking-widest mb-1 block">Seu Nome</label>
+                  <input 
+                    type="text" 
+                    value={editName} 
+                    onChange={(e) => setEditName(e.target.value)}
+                    className="w-full px-4 py-3 bg-[#efd2fe]/30 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#f170c3] text-[#521256] font-bold"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-black text-[#521256]/50 uppercase tracking-widest mb-1 block">Link da Foto (URL)</label>
+                  <input 
+                    type="text" 
+                    value={editAvatar} 
+                    onChange={(e) => setEditAvatar(e.target.value)}
+                    placeholder="https://..."
+                    className="w-full px-4 py-3 bg-[#efd2fe]/30 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#f170c3] text-[#521256] font-bold text-xs"
+                  />
+                  <p className="text-[9px] text-[#521256]/40 mt-1">Dica: Copie o link de uma imagem do Google, Pinterest ou Bitmoji.</p>
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-black text-[#521256]/50 uppercase tracking-widest mb-1 block">E-mail (Login)</label>
+                  <div className="w-full px-4 py-3 bg-gray-100 rounded-xl text-gray-500 font-bold text-sm flex items-center gap-2">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+                    {currentUser?.email}
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-[#efd2fe]">
+                  <label className="text-[10px] font-black text-[#f170c3] uppercase tracking-widest mb-1 block">Alterar Senha (Opcional)</label>
+                  <input 
+                    type="password" 
+                    value={newPassword} 
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="Nova senha..."
+                    className="w-full px-4 py-3 bg-white border-2 border-[#efd2fe] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#f170c3] text-[#521256] font-bold"
+                  />
+                </div>
+
+                <button 
+                  onClick={handleSaveProfile} 
+                  className="w-full py-4 bg-[#521256] text-white font-black rounded-xl hover:scale-[1.02] active:scale-95 transition-all shadow-lg"
+                >
+                  SALVAR ALTERAÇÕES
+                </button>
+
+                <div className="grid grid-cols-2 gap-3 pt-4 border-t border-[#efd2fe]">
+                   <button onClick={handleLogout} className="py-3 bg-orange-100 text-orange-600 rounded-xl font-bold text-xs hover:bg-orange-200 transition-colors">
+                     SAIR DA CONTA
+                   </button>
+                   <button onClick={() => setIsResetConfirmOpen(true)} className="py-3 bg-red-100 text-red-600 rounded-xl font-bold text-xs hover:bg-red-200 transition-colors">
+                     ZERAR DADOS
+                   </button>
+                </div>
+                
+                <button onClick={() => setIsSettingsOpen(false)} className="w-full py-3 text-[#521256]/50 font-bold text-xs hover:text-[#521256]">
+                  Fechar sem salvar
+                </button>
+             </div>
+          </div>
+        </div>
+      )}
+
+      {isResetConfirmOpen && ( <div className="fixed inset-0 bg-red-600/80 z-[250] flex items-center justify-center p-4"> <div className="bg-white p-8 rounded-2xl text-center"> <h3 className="font-black text-xl mb-4">Tem certeza?</h3> <button onClick={resetAllData} className="bg-red-600 text-white px-6 py-3 rounded-xl font-bold">Sim, apagar tudo</button> <button onClick={() => setIsResetConfirmOpen(false)} className="ml-4 text-gray-500 font-bold">Cancelar</button> </div> </div> )}
     </Layout>
   );
 };
