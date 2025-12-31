@@ -100,10 +100,18 @@ const App: React.FC = () => {
       setCategories(Array.from(new Set([...INITIAL_CATEGORIES, ...dbCategories])).sort());
     });
 
+    // --- CARREGAMENTO DE ORÇAMENTOS (Mês a Mês) ---
     const qBudgets = query(collection(db, "budgets"), where("uid", "==", uid));
     const unsubBudgets = onSnapshot(qBudgets, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as unknown as CategoryBudget));
-      setBudgets(data);
+      const allBudgets = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as any));
+      
+      // Filtra aqui no código para pegar apenas os que pertencem ao Mês e Ano selecionados no calendário
+      const currentMonthBudgets = allBudgets.filter((b: any) => 
+        b.month === currentDate.getMonth() && 
+        b.year === currentDate.getFullYear()
+      );
+      
+      setBudgets(currentMonthBudgets);
     });
 
     const qInv = query(collection(db, "investment_transactions"), where("uid", "==", uid));
@@ -121,41 +129,24 @@ const App: React.FC = () => {
     });
 
     return () => { unsubTrans(); unsubCats(); unsubBudgets(); unsubInv(); unsubSettings(); };
-  }, [currentUser]);
+  }, [currentUser, currentDate]); // Adicionamos currentDate aqui para recarregar quando mudar o mês
 
-  // --- HANDLER DE SALVAR PERFIL COM DEBUG ---
+  // --- Handlers ---
+
   const handleSaveProfile = async () => {
     if (!auth.currentUser || !currentUser) return;
     try {
-      // 1. Auth Profile
-      await updateProfile(auth.currentUser, {
-        displayName: editName,
-        photoURL: editAvatar
-      });
-
-      // 2. Firestore Document (Aqui que costuma dar erro de permissão)
-      await setDoc(doc(db, "users", currentUser.id), {
-        name: editName,
-        avatar: editAvatar,
-        email: currentUser.email,
-        id: currentUser.id
-      }, { merge: true });
-
-      // 3. Password
+      await updateProfile(auth.currentUser, { displayName: editName, photoURL: editAvatar });
+      await setDoc(doc(db, "users", currentUser.id), { name: editName, avatar: editAvatar, email: currentUser.email, id: currentUser.id }, { merge: true });
       if (newPassword) {
-        if (newPassword.length < 6) {
-          alert("A senha precisa ter pelo menos 6 caracteres! 🔒");
-          return;
-        }
+        if (newPassword.length < 6) { alert("A senha precisa ter pelo menos 6 caracteres! 🔒"); return; }
         await updatePassword(auth.currentUser, newPassword);
         alert("Senha atualizada! 🔐");
       }
-
       alert("Perfil salvo com sucesso! ✨");
       window.location.reload();
     } catch (error: any) {
       console.error("Erro no perfil:", error);
-      // Aqui mostramos a mensagem real do erro para facilitar
       alert(`Ops! Não foi possível salvar.\nErro: ${error.message}`);
     }
   };
@@ -170,13 +161,29 @@ const App: React.FC = () => {
   const updInv = async (u: any) => currentUser && updateDoc(doc(db, "investment_transactions", u.id), { ...u, uid: currentUser.id });
   const delInv = async (id: string) => deleteDoc(doc(db, "investment_transactions", id));
   
+  // --- ATUALIZAÇÃO DE TETO (SALVANDO COM MÊS E ANO) ---
   const updBudg = async (c: string, l: number) => { 
     if(!currentUser) return; 
+    
+    // Verifica se já existe um teto para essa categoria NESTE MÊS
     const ex = budgets.find(b => b.category === c); 
-    if(ex?.id) await updateDoc(doc(db, "budgets", ex.id), { limit: l }); 
-    else await addDoc(collection(db, "budgets"), { category: c, limit: l, uid: currentUser.id });
+    
+    if(ex?.id) {
+      // Se existe, atualiza
+      await updateDoc(doc(db, "budgets", ex.id), { limit: l }); 
+    } else {
+      // Se não existe, cria um novo "carimbado" com o mês e ano atuais
+      await addDoc(collection(db, "budgets"), { 
+        category: c, 
+        limit: l, 
+        uid: currentUser.id,
+        month: currentDate.getMonth(),
+        year: currentDate.getFullYear()
+      });
+    }
   };
 
+  // --- DELETAR TETO (MESMA LÓGICA) ---
   const delBudg = async (category: string) => {
     if(!currentUser) return;
     const ex = budgets.find(b => b.category === category);
