@@ -47,12 +47,12 @@ const ChatAssistant: React.FC<ChatAssistantProps> = ({ transactions, marketItems
     setIsLoading(true);
 
     try {
-      // MODELO ATUALIZADO PARA O FLASH (MAIS RÁPIDO)
-      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+      // VOLTAMOS PARA O GEMINI-PRO (COMPATÍVEL COM SUA VERSÃO)
+      const model = genAI.getGenerativeModel({ model: "gemini-pro" });
 
       const financialContext = JSON.stringify({
         saldo_atual: currentBalance,
-        ultimas_transacoes: transactions.slice(0, 30), // Aumentei para 30
+        ultimas_transacoes: transactions.slice(0, 30),
         gastos_mercado: marketItems,
         tetos_orcamento: budgets,
         data_hoje: new Date().toLocaleDateString('pt-BR')
@@ -80,7 +80,7 @@ const ChatAssistant: React.FC<ChatAssistantProps> = ({ transactions, marketItems
       setMessages(prev => [...prev, { role: 'model', text: text }]);
     } catch (error: any) {
       console.error("Erro na IA:", error);
-      // AQUI ESTÁ O PULO DO GATO: VAI MOSTRAR O ERRO NA TELA
+      // Mantivemos o aviso de erro na tela para facilitar
       setMessages(prev => [...prev, { role: 'model', text: `⚠️ ERRO TÉCNICO: ${error.message || error.toString()}` }]);
     } finally {
       setIsLoading(false);
