@@ -43,6 +43,7 @@ const Dashboard: React.FC<DashboardProps> = ({
 
   const PAYMENT_CATEGORY = "Pagamento de Fatura";
 
+  // Gráfico de Pizza (Ignora pagamento de fatura para não duplicar visualmente)
   const categoryData = useMemo(() => {
     const expenses = transactions.filter(t => 
       t.type === TransactionType.EXPENSE && 
@@ -65,47 +66,51 @@ const Dashboard: React.FC<DashboardProps> = ({
       .sort((a, b) => b.value - a.value);
   }, [transactions]);
 
+  // Cálculos dos Cards (Stats)
   const stats = useMemo(() => {
     // 1. Receitas
     const receitas = transactions
       .filter(t => t.type === TransactionType.INCOME)
       .reduce((acc, curr) => acc + curr.amount, 0);
 
-    // 2. Despesas Imediatas (Débito/Dinheiro/Pix)
+    // 2. Despesas Imediatas (Débito/Dinheiro/Pix) - Inclui tudo que saiu da conta
     const immediateExpenses = transactions
       .filter(t => t.type === TransactionType.EXPENSE && t.paymentMethod !== PaymentMethod.CREDIT_CARD)
       .reduce((acc, curr) => acc + curr.amount, 0);
 
-    // 3. Gastos no Cartão (Aumentam a fatura)
+    // 3. Gastos no Cartão (Só aumentam a fatura, não saem da conta agora)
     const faturaNovosGastos = transactions
       .filter(t => t.type === TransactionType.EXPENSE && t.paymentMethod === PaymentMethod.CREDIT_CARD)
       .reduce((acc, curr) => acc + curr.amount, 0);
 
-    // 4. Pagamentos de Fatura
+    // 4. Pagamentos de Fatura (Saíram da conta e abatem a dívida)
     const pagamentosFatura = transactions
       .filter(t => t.category === PAYMENT_CATEGORY)
       .reduce((acc, curr) => acc + curr.amount, 0);
 
     // --- CÁLCULOS FINAIS ---
 
+    // Fatura Atual = (Dívida Inicial + Novos Gastos) - O que já pagou
     const faturaTotal = (initialCreditBill + faturaNovosGastos) - pagamentosFatura;
     
-    // Despesas da Conta (Só Débito/Pix, removendo o pagamento da fatura para não duplicar visualmente)
+    // Saídas da Conta (Débito Puro) = Tudo que saiu - Pagamentos de Fatura (pra separar visualmente)
     const despesasConta = immediateExpenses - pagamentosFatura;
 
-    // Despesas TOTAIS (Custo de Vida Real: Tudo de crédito + Tudo de débito)
+    // Despesas TOTAIS = (Tudo que gastou no Débito) + (Tudo que gastou no Crédito)
+    // Isso mostra o Custo de Vida Real, independente de ter pago a fatura ou não.
     const totalGeralGastos = despesasConta + faturaNovosGastos;
     
+    // Últimas do cartão
     const cardExpenses = transactions
       .filter(t => t.type === TransactionType.EXPENSE && t.paymentMethod === PaymentMethod.CREDIT_CARD)
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
       .slice(0, 3);
 
     return {
-      saldo: initialBalance + receitas - immediateExpenses, // Saldo real (desconta tudo que saiu da conta)
+      saldo: initialBalance + receitas - immediateExpenses, // Saldo desconta tudo que saiu
       receitas,
-      despesasConta,    // Saídas (Débito)
-      totalGeralGastos, // Despesas Totais (Crédito + Débito)
+      despesasConta,    // Card Roxo (Débito)
+      totalGeralGastos, // Card Vermelho (Soma Tudo)
       fatura: Math.max(0, faturaTotal),
       limiteTotal: totalCreditLimit,
       cardExpenses
@@ -203,7 +208,7 @@ const Dashboard: React.FC<DashboardProps> = ({
 
   return (
     <div className="space-y-8 animate-in fade-in duration-700 pb-10">
-      {/* ATUALIZAÇÃO DO GRID: Garante que os 5 cards se acomodem em qualquer tela */}
+      {/* GRID CONFIGURADO PARA 5 CARDS (xl:grid-cols-5) */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
         
         {/* 1. Saldo Disponível */}
@@ -212,7 +217,7 @@ const Dashboard: React.FC<DashboardProps> = ({
         {/* 2. Receitas */}
         <StatCard title="Receitas do Mês" value={stats.receitas} color={COLORS.POSITIVE} />
         
-        {/* 3. Despesas Totais (NOVO - SOMA TUDO) */}
+        {/* 3. Despesas Totais (SOMA TUDO) */}
         <StatCard title="Despesas Totais" value={stats.totalGeralGastos} color={COLORS.NEGATIVE} />
 
         {/* 4. Saídas da Conta (Só Débito) */}
@@ -266,4 +271,206 @@ const Dashboard: React.FC<DashboardProps> = ({
                 className="flex items-center gap-1 text-xs font-bold text-[#521256]/40 hover:text-[#521256] transition-colors group"
               >
                 R$ {stats.limiteTotal.toLocaleString('pt-BR')} total
-                <svg className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" fill="currentColor" viewBox="0 0 20 20"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2
+                <svg className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" fill="currentColor" viewBox="0 0 20 20"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" /></svg>
+              </button>
+            </div>
+          </div>
+          <div className="w-full h-6 bg-[#efd2fe]/40 rounded-full overflow-hidden p-1 shadow-inner border border-[#efd2fe]">
+            <div 
+              className="h-full bg-gradient-to-r from-[#f170c3] to-[#521256] rounded-full transition-all duration-1000 ease-out shadow-lg"
+              style={{ width: `${Math.min(progressPercentage, 100)}%` }}
+            ></div>
+          </div>
+        </div>
+
+        <div>
+          <h4 className="text-xs font-black text-[#521256] opacity-40 uppercase tracking-widest mb-4">Últimas do Cartão</h4>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {stats.cardExpenses.map((t) => (
+              <div key={t.id} className="bg-[#efd2fe]/30 p-5 rounded-2xl border border-white/50 flex items-center justify-between hover:bg-white transition-colors cursor-pointer group">
+                <div className="flex items-center gap-3">
+                   <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center text-xl shadow-sm">💳</div>
+                   <div>
+                     <p className="text-sm font-black text-[#521256] line-clamp-1">{t.description}</p>
+                     <p className="text-xs font-bold opacity-50">{new Date(t.date).toLocaleDateString('pt-BR')}</p>
+                   </div>
+                </div>
+                <span className="text-sm font-black text-[#521256] group-hover:text-[#f170c3]">R$ {t.amount.toLocaleString('pt-BR')}</span>
+              </div>
+            ))}
+            {stats.cardExpenses.length === 0 && (
+              <p className="col-span-3 text-center py-4 text-xs font-bold opacity-30 italic">Nenhum gasto recente no cartão de crédito.</p>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-8">
+        <div className="bg-white/70 rounded-[2.5rem] p-10 shadow-xl shadow-[#521256]/5 border border-white/40">
+          <h3 className="text-xl font-black text-[#521256] mb-8 flex items-center justify-between">
+            Análise por Categoria (Mês Atual) <span>🔎</span>
+          </h3>
+          
+          <div className="flex flex-col lg:flex-row items-center gap-8 lg:gap-12">
+            <div className="h-[300px] w-full lg:w-1/2">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={categoryData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={70}
+                    outerRadius={110}
+                    paddingAngle={5}
+                    dataKey="value"
+                    stroke="none"
+                  >
+                    {categoryData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip 
+                    contentStyle={{ borderRadius: '1.2rem', border: 'none', boxShadow: '0 10px 25px rgba(0,0,0,0.05)', padding: '0.8rem' }}
+                    formatter={(value: number, name: string) => [`R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, name]}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+
+            <div className="w-full lg:w-1/2 space-y-3 lg:max-h-[300px] lg:overflow-y-auto pr-2 custom-scrollbar">
+              {categoryData.map((entry, index) => (
+                <div 
+                  key={index} 
+                  onClick={() => setSelectedCategory(entry.name)} 
+                  className="flex items-center justify-between p-3 rounded-2xl hover:bg-white transition-colors cursor-pointer group border border-transparent hover:border-[#f170c3]/20 hover:shadow-md"
+                >
+                  <div className="flex items-center gap-3">
+                    <div 
+                      className="w-4 h-4 rounded-full shadow-sm" 
+                      style={{ backgroundColor: CHART_COLORS[index % CHART_COLORS.length] }}
+                    ></div>
+                    <div>
+                      <p className="text-xs font-black text-[#521256] group-hover:text-[#f170c3] transition-colors">{entry.name}</p>
+                      <p className="text-[10px] font-bold opacity-40">{entry.percent.toFixed(1)}%</p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-sm font-black text-[#521256]">
+                        R$ {entry.value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    </span>
+                    <p className="text-[9px] font-bold text-[#f170c3] opacity-0 group-hover:opacity-100 transition-opacity">Ver detalhes</p>
+                  </div>
+                </div>
+              ))}
+              
+              {categoryData.length === 0 && (
+                <div className="text-center py-4 w-full">
+                  <p className="text-xs opacity-40 italic">Nenhum dado para exibir.</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <TransactionModal 
+        isOpen={isModalOpen} 
+        onClose={() => setIsModalOpen(false)} 
+        onSave={handleSave} 
+        type={modalType} 
+        availableCategories={categories}
+        onAddCategory={onAddCategory}
+        onOpenCategoryManager={onOpenCategoryManager}
+      />
+
+      {/* MODAL DE DETALHES DA CATEGORIA */}
+      {selectedCategory && (
+        <div className="fixed inset-0 bg-[#521256]/60 backdrop-blur-md z-[150] flex items-center justify-center p-4 animate-in fade-in duration-200">
+            <div className="bg-white rounded-[2.5rem] w-full max-w-md p-8 shadow-2xl animate-in zoom-in duration-300 max-h-[80vh] flex flex-col">
+                <div className="flex justify-between items-center mb-6">
+                    <div>
+                        <p className="text-[10px] font-black opacity-40 uppercase tracking-widest">Detalhes da Categoria</p>
+                        <h3 className="text-2xl font-black text-[#521256]">{selectedCategory}</h3>
+                    </div>
+                    <button onClick={() => setSelectedCategory(null)} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
+                        <svg className="w-6 h-6 text-[#521256]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                    </button>
+                </div>
+                
+                <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-3">
+                    {categoryTransactions.map(t => (
+                        <div key={t.id} className="flex justify-between items-center p-4 bg-[#efd2fe]/20 rounded-2xl border border-transparent hover:border-[#f170c3]/30 transition-colors">
+                            <div>
+                                <p className="font-bold text-[#521256] text-sm">{t.description}</p>
+                                <p className="text-[10px] opacity-50 font-bold uppercase">{new Date(t.date + 'T12:00:00').toLocaleDateString('pt-BR')}</p>
+                            </div>
+                            <span className="font-black text-red-500 text-sm">
+                                - R$ {t.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                            </span>
+                        </div>
+                    ))}
+                    {categoryTransactions.length === 0 && (
+                        <p className="text-center text-sm opacity-40 italic py-4">Nenhuma transação encontrada.</p>
+                    )}
+                </div>
+
+                <div className="mt-6 pt-4 border-t border-gray-100 flex justify-between items-end">
+                    <span className="text-xs font-bold opacity-50 uppercase">Total na Categoria</span>
+                    <span className="text-xl font-black text-[#521256]">
+                        R$ {categoryTransactions.reduce((acc, curr) => acc + curr.amount, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    </span>
+                </div>
+            </div>
+        </div>
+      )}
+
+      {/* MODAL DE PAGAMENTO DE FATURA / CALIBRAÇÃO */}
+      {(isBalanceCalibrating || isCreditCalibrating || isLimitCalibrating || isPayingBill) && (
+        <div className="fixed inset-0 bg-[#521256]/60 backdrop-blur-md z-[150] flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-[2.5rem] w-full max-w-sm p-10 shadow-2xl animate-in zoom-in duration-300">
+            <h3 className="text-xl font-black text-[#521256] mb-2 text-center">
+              {isPayingBill 
+                ? 'Pagar Fatura 💳'
+                : (isLimitCalibrating ? 'Definir Limite' : 'Calibrar ' + (isBalanceCalibrating ? 'Saldo' : 'Fatura')) + ' ✨'}
+            </h3>
+            
+            <p className="text-xs font-bold text-[#521256]/40 mb-8 text-center uppercase tracking-widest">
+              {isPayingBill 
+                 ? 'Quanto você vai pagar/antecipar?' 
+                 : (isLimitCalibrating ? 'Qual é o limite somado dos cartões?' : (isBalanceCalibrating ? 'Saldo real atual?' : 'Gasto atual na fatura?'))}
+            </p>
+            
+            <div className="mb-8">
+              <label className="text-[10px] font-black text-[#521256]/50 uppercase tracking-[0.2em] mb-2 block">Valor em R$</label>
+              <input 
+                autoFocus
+                type="number" 
+                value={calibrationValue}
+                onChange={(e) => setCalibrationValue(e.target.value)}
+                placeholder="0,00"
+                className="w-full px-6 py-5 bg-[#efd2fe]/30 rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#f170c3] text-[#521256] font-black text-3xl text-center"
+              />
+            </div>
+
+            <div className="flex flex-col gap-3">
+              <button 
+                onClick={isPayingBill ? handlePayBill : saveCalibration}
+                className="w-full py-5 bg-[#521256] text-white font-black rounded-2xl shadow-xl hover:scale-[1.02] active:scale-95 transition-all"
+              >
+                {isPayingBill ? 'CONFIRMAR PAGAMENTO' : 'SALVAR AJUSTE'}
+              </button>
+              <button 
+                onClick={() => { setIsBalanceCalibrating(false); setIsCreditCalibrating(false); setIsLimitCalibrating(false); setIsPayingBill(false); }}
+                className="w-full py-4 text-[#521256] font-black hover:bg-[#efd2fe]/50 rounded-2xl transition-colors text-sm"
+              >
+                CANCELAR
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default Dashboard;
