@@ -24,16 +24,22 @@ const ChatAssistant: React.FC<ChatAssistantProps> = ({ transactions, marketItems
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Rola para baixo quando chega mensagem nova
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // --- CONFIGURAÇÃO DA IA ---
-  const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY || '');
+  // PEGA A CHAVE (SE NÃO TIVER, AVISA)
+  const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+  const genAI = new GoogleGenerativeAI(apiKey || '');
 
   const handleSend = async () => {
     if (!input.trim()) return;
+
+    // VERIFICA SE A CHAVE EXISTE ANTES DE TENTAR
+    if (!apiKey) {
+      setMessages(prev => [...prev, { role: 'model', text: '🚨 ERRO: Não encontrei a API KEY. Verifique se você configurou o "VITE_GEMINI_API_KEY" na Vercel e fez o Redeploy.' }]);
+      return;
+    }
 
     const userMsg = input;
     setInput('');
@@ -41,33 +47,30 @@ const ChatAssistant: React.FC<ChatAssistantProps> = ({ transactions, marketItems
     setIsLoading(true);
 
     try {
-      const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+      // MODELO ATUALIZADO PARA O FLASH (MAIS RÁPIDO)
+      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
-      // PREPARAÇÃO DOS DADOS (O CONTEXTO DA IA)
-      // Aqui transformamos seus dados em texto para a IA ler
       const financialContext = JSON.stringify({
         saldo_atual: currentBalance,
-        ultimas_transacoes: transactions.slice(0, 20), // Manda as 20 últimas para não ficar gigante
+        ultimas_transacoes: transactions.slice(0, 30), // Aumentei para 30
         gastos_mercado: marketItems,
         tetos_orcamento: budgets,
         data_hoje: new Date().toLocaleDateString('pt-BR')
       });
 
       const prompt = `
-        Você é a "Miga Financeira", uma assistente pessoal de finanças divertida, direta e muito organizada.
+        Você é a "Miga Financeira", uma assistente pessoal de finanças divertida e organizada.
         
-        SEUS DADOS ATUAIS (Não invente dados, use estes):
+        DADOS FINANCEIROS DA ISA (JSON):
         ${financialContext}
 
-        SUAS REGRAS:
-        1. Responda de forma curta e amigável, usando emojis.
-        2. Se o saldo estiver baixo, dê um alerta carinhoso.
-        3. Se perguntarem sobre gastos, some os valores baseados no JSON acima.
-        4. Analise se a pessoa está gastando muito com "Mimos" (MarketItems type 'luxury').
-        5. Fale em Português do Brasil.
-        6. Se não souber a resposta (ex: dados muito antigos que não estão na lista), diga que só consegue ver os dados recentes.
+        REGRAS:
+        1. Responda de forma curta e use emojis.
+        2. Analise o JSON acima para responder. Se perguntarem "quanto gastei com X", some os valores do JSON.
+        3. Se não tiver dados sobre o assunto no JSON, diga "Não achei nada sobre isso nos seus últimos lançamentos, miga".
+        4. Fale em Português.
 
-        Pergunta do usuário: ${userMsg}
+        Pergunta: ${userMsg}
       `;
 
       const result = await model.generateContent(prompt);
@@ -75,9 +78,10 @@ const ChatAssistant: React.FC<ChatAssistantProps> = ({ transactions, marketItems
       const text = response.text();
 
       setMessages(prev => [...prev, { role: 'model', text: text }]);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Erro na IA:", error);
-      setMessages(prev => [...prev, { role: 'model', text: 'Miga, dei uma tontura aqui... Tenta de novo? 😵‍💫' }]);
+      // AQUI ESTÁ O PULO DO GATO: VAI MOSTRAR O ERRO NA TELA
+      setMessages(prev => [...prev, { role: 'model', text: `⚠️ ERRO TÉCNICO: ${error.message || error.toString()}` }]);
     } finally {
       setIsLoading(false);
     }
@@ -92,12 +96,8 @@ const ChatAssistant: React.FC<ChatAssistantProps> = ({ transactions, marketItems
 
   return (
     <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end">
-      
-      {/* JANELA DO CHAT */}
       {isOpen && (
         <div className="mb-4 w-80 md:w-96 bg-white rounded-3xl shadow-2xl border border-[#efd2fe] overflow-hidden flex flex-col animate-in slide-in-from-bottom-10 duration-300" style={{ height: '500px' }}>
-          
-          {/* Header */}
           <div className="bg-[#521256] p-4 flex justify-between items-center">
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 bg-white rounded-full flex items-center justify-center text-lg">🤖</div>
@@ -113,12 +113,11 @@ const ChatAssistant: React.FC<ChatAssistantProps> = ({ transactions, marketItems
             </button>
           </div>
 
-          {/* Área de Mensagens */}
           <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-[#fdf4ff]">
             {messages.map((msg, idx) => (
               <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                 <div 
-                  className={`max-w-[80%] p-3 rounded-2xl text-sm font-medium
+                  className={`max-w-[85%] p-3 rounded-2xl text-sm font-medium break-words
                   ${msg.role === 'user' 
                     ? 'bg-[#521256] text-white rounded-br-none' 
                     : 'bg-white text-[#521256] shadow-sm border border-[#efd2fe] rounded-bl-none'}`}
@@ -141,7 +140,6 @@ const ChatAssistant: React.FC<ChatAssistantProps> = ({ transactions, marketItems
             <div ref={messagesEndRef} />
           </div>
 
-          {/* Input */}
           <div className="p-3 bg-white border-t border-[#efd2fe]">
             <div className="flex items-center gap-2 bg-[#efd2fe]/30 rounded-full px-4 py-2">
               <input 
@@ -164,7 +162,6 @@ const ChatAssistant: React.FC<ChatAssistantProps> = ({ transactions, marketItems
         </div>
       )}
 
-      {/* BOTÃO FLUTUANTE (FAB) */}
       <button 
         onClick={() => setIsOpen(!isOpen)}
         className="group relative flex items-center justify-center w-14 h-14 bg-[#521256] text-white rounded-full shadow-xl hover:scale-110 active:scale-95 transition-all duration-300 border-4 border-[#efd2fe]"
@@ -173,13 +170,6 @@ const ChatAssistant: React.FC<ChatAssistantProps> = ({ transactions, marketItems
           <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
         ) : (
           <span className="text-2xl animate-pulse">✨</span>
-        )}
-        
-        {/* Tooltipzinha */}
-        {!isOpen && (
-          <span className="absolute right-16 bg-white text-[#521256] text-xs font-bold px-3 py-1 rounded-full shadow-md opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
-            Miga Financeira
-          </span>
         )}
       </button>
     </div>
