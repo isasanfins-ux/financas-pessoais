@@ -10,7 +10,8 @@ interface MarketProps {
 
 const Market: React.FC<MarketProps> = ({ items, onAddItem, onDeleteItem }) => {
   const [name, setName] = useState('');
-  const [amount, setAmount] = useState('');
+  const [amount, setAmount] = useState(''); // Valor Unitário
+  const [quantity, setQuantity] = useState('1'); // Nova Quantidade
   const [type, setType] = useState<'essential' | 'luxury' | 'maintenance'>('essential');
   
   const recentItems = [...items].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
@@ -40,19 +41,25 @@ const Market: React.FC<MarketProps> = ({ items, onAddItem, onDeleteItem }) => {
   const totalSpent = items.reduce((acc, curr) => acc + curr.amount, 0);
 
   const handleAdd = (itemName: string = name, itemType: 'essential' | 'luxury' | 'maintenance' = type) => {
-    const val = parseFloat(amount.replace(',', '.'));
-    if (!val || !itemName) return;
+    const unitPrice = parseFloat(amount.replace(',', '.'));
+    const qty = parseInt(quantity);
+
+    if (!unitPrice || !itemName || !qty) return;
+
+    // Calcula o total (Unitário x Quantidade)
+    const totalAmount = unitPrice * qty;
 
     onAddItem({
       name: itemName,
-      amount: val,
-      quantity: 1,
+      amount: totalAmount, // Salva o valor total da compra
+      quantity: qty,       // Salva a quantidade para histórico
       type: itemType,
       date: new Date().toISOString().split('T')[0]
     });
 
     setName('');
     setAmount('');
+    setQuantity('1'); // Reseta para 1
   };
 
   const QuickButton = ({ label, type }: { label: string, type: 'essential' | 'luxury' | 'maintenance' }) => (
@@ -108,9 +115,21 @@ const Market: React.FC<MarketProps> = ({ items, onAddItem, onDeleteItem }) => {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-[10px] font-black opacity-40 uppercase tracking-widest ml-1">Valor (R$)</label>
+              <div className="flex gap-3">
+                {/* CAMPO DE QUANTIDADE */}
+                <div className="w-1/3">
+                  <label className="text-[10px] font-black opacity-40 uppercase tracking-widest ml-1">Qtd</label>
+                  <input 
+                    type="number" 
+                    value={quantity}
+                    onChange={(e) => setQuantity(e.target.value)}
+                    placeholder="1"
+                    className="w-full px-4 py-3 bg-[#efd2fe]/30 rounded-xl font-bold text-[#521256] focus:outline-none focus:ring-2 focus:ring-[#f170c3] text-center"
+                  />
+                </div>
+
+                <div className="w-2/3">
+                  <label className="text-[10px] font-black opacity-40 uppercase tracking-widest ml-1">Valor Unitário</label>
                   <input 
                     type="number" 
                     value={amount}
@@ -119,25 +138,31 @@ const Market: React.FC<MarketProps> = ({ items, onAddItem, onDeleteItem }) => {
                     className="w-full px-4 py-3 bg-[#efd2fe]/30 rounded-xl font-bold text-[#521256] focus:outline-none focus:ring-2 focus:ring-[#f170c3]"
                   />
                 </div>
-                <div>
-                  <label className="text-[10px] font-black opacity-40 uppercase tracking-widest ml-1">Tipo</label>
-                  <select 
-                    value={type}
-                    onChange={(e) => setType(e.target.value as any)}
-                    className="w-full px-4 py-3 bg-[#efd2fe]/30 rounded-xl font-bold text-[#521256] focus:outline-none focus:ring-2 focus:ring-[#f170c3]"
-                  >
-                    <option value="essential">Essencial 🥬</option>
-                    <option value="maintenance">Casa/Limpeza 🧹</option>
-                    <option value="luxury">Mimo/Extra 🍫</option>
-                  </select>
-                </div>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-black opacity-40 uppercase tracking-widest ml-1">Tipo</label>
+                <select 
+                  value={type}
+                  onChange={(e) => setType(e.target.value as any)}
+                  className="w-full px-4 py-3 bg-[#efd2fe]/30 rounded-xl font-bold text-[#521256] focus:outline-none focus:ring-2 focus:ring-[#f170c3]"
+                >
+                  <option value="essential">Essencial 🥬</option>
+                  <option value="maintenance">Casa/Limpeza 🧹</option>
+                  <option value="luxury">Mimo/Extra 🍫</option>
+                </select>
               </div>
 
               <button 
                 onClick={() => handleAdd()}
-                className="w-full py-4 bg-[#521256] text-white font-black rounded-xl hover:scale-[1.02] transition-all shadow-lg"
+                className="w-full py-4 bg-[#521256] text-white font-black rounded-xl hover:scale-[1.02] transition-all shadow-lg flex justify-center items-center gap-2"
               >
-                ADICIONAR AO CARRINHO
+                <span>ADICIONAR</span>
+                {amount && quantity && (
+                   <span className="bg-white/20 px-2 py-0.5 rounded text-xs">
+                     (Total: R$ {(parseFloat(amount) * parseInt(quantity) || 0).toLocaleString('pt-BR')})
+                   </span>
+                )}
               </button>
             </div>
           </div>
@@ -206,7 +231,11 @@ const Market: React.FC<MarketProps> = ({ items, onAddItem, onDeleteItem }) => {
                       {item.type === 'essential' ? '🥬' : (item.type === 'luxury' ? '🍫' : '🧹')}
                     </div>
                     <div>
-                      <p className="font-bold text-[#521256]">{item.name}</p>
+                      {/* MOSTRANDO A QUANTIDADE AQUI */}
+                      <p className="font-bold text-[#521256]">
+                        {item.quantity && item.quantity > 1 && <span className="text-[#f170c3]">{item.quantity}x </span>}
+                        {item.name}
+                      </p>
                       <p className="text-[10px] opacity-50 uppercase font-black">{new Date(item.date).toLocaleDateString('pt-BR')}</p>
                     </div>
                   </div>
