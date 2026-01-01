@@ -43,7 +43,7 @@ const Dashboard: React.FC<DashboardProps> = ({
 
   const PAYMENT_CATEGORY = "Pagamento de Fatura";
 
-  // Gráfico de Pizza (Ignora pagamento de fatura para não duplicar visualmente)
+  // Gráfico de Pizza
   const categoryData = useMemo(() => {
     const expenses = transactions.filter(t => 
       t.type === TransactionType.EXPENSE && 
@@ -66,51 +66,38 @@ const Dashboard: React.FC<DashboardProps> = ({
       .sort((a, b) => b.value - a.value);
   }, [transactions]);
 
-  // Cálculos dos Cards (Stats)
+  // Cálculos dos Cards
   const stats = useMemo(() => {
-    // 1. Receitas
     const receitas = transactions
       .filter(t => t.type === TransactionType.INCOME)
       .reduce((acc, curr) => acc + curr.amount, 0);
 
-    // 2. Despesas Imediatas (Débito/Dinheiro/Pix) - Inclui tudo que saiu da conta
     const immediateExpenses = transactions
       .filter(t => t.type === TransactionType.EXPENSE && t.paymentMethod !== PaymentMethod.CREDIT_CARD)
       .reduce((acc, curr) => acc + curr.amount, 0);
 
-    // 3. Gastos no Cartão (Só aumentam a fatura, não saem da conta agora)
     const faturaNovosGastos = transactions
       .filter(t => t.type === TransactionType.EXPENSE && t.paymentMethod === PaymentMethod.CREDIT_CARD)
       .reduce((acc, curr) => acc + curr.amount, 0);
 
-    // 4. Pagamentos de Fatura (Saíram da conta e abatem a dívida)
     const pagamentosFatura = transactions
       .filter(t => t.category === PAYMENT_CATEGORY)
       .reduce((acc, curr) => acc + curr.amount, 0);
 
-    // --- CÁLCULOS FINAIS ---
-
-    // Fatura Atual = (Dívida Inicial + Novos Gastos) - O que já pagou
     const faturaTotal = (initialCreditBill + faturaNovosGastos) - pagamentosFatura;
-    
-    // Saídas da Conta (Débito Puro) = Tudo que saiu - Pagamentos de Fatura (pra separar visualmente)
     const despesasConta = immediateExpenses - pagamentosFatura;
-
-    // Despesas TOTAIS = (Tudo que gastou no Débito) + (Tudo que gastou no Crédito)
-    // Isso mostra o Custo de Vida Real, independente de ter pago a fatura ou não.
     const totalGeralGastos = despesasConta + faturaNovosGastos;
     
-    // Últimas do cartão
     const cardExpenses = transactions
       .filter(t => t.type === TransactionType.EXPENSE && t.paymentMethod === PaymentMethod.CREDIT_CARD)
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
       .slice(0, 3);
 
     return {
-      saldo: initialBalance + receitas - immediateExpenses, // Saldo desconta tudo que saiu
+      saldo: initialBalance + receitas - immediateExpenses,
       receitas,
-      despesasConta,    // Card Roxo (Débito)
-      totalGeralGastos, // Card Vermelho (Soma Tudo)
+      despesasConta,
+      totalGeralGastos,
       fatura: Math.max(0, faturaTotal),
       limiteTotal: totalCreditLimit,
       cardExpenses
@@ -186,6 +173,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     setIsLimitCalibrating(false);
   };
 
+  // Componente do Card Atualizado
   const StatCard = ({ title, value, color, bgColor = 'white', textColor = '#521256', onClick }: any) => (
     <div 
       onClick={onClick}
@@ -208,23 +196,45 @@ const Dashboard: React.FC<DashboardProps> = ({
 
   return (
     <div className="space-y-8 animate-in fade-in duration-700 pb-10">
-      {/* GRID CONFIGURADO PARA 5 CARDS (xl:grid-cols-5) */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
         
-        {/* 1. Saldo Disponível */}
-        <StatCard title="Saldo Disponível" value={stats.saldo} bgColor={COLORS.BASE} onClick={openBalanceCalibration} />
+        {/* 1. Saldo Disponível (Mantém) */}
+        <StatCard 
+          title="Saldo Disponível" 
+          value={stats.saldo} 
+          bgColor={COLORS.BASE} 
+          onClick={openBalanceCalibration} 
+        />
 
-        {/* 2. Receitas */}
-        <StatCard title="Receitas do Mês" value={stats.receitas} color={COLORS.POSITIVE} />
+        {/* 2. Saídas (Débito) - Vem logo depois, Vermelho + Emoji */}
+        <StatCard 
+          title="Saídas (Débito) 🔻" 
+          value={stats.despesasConta} 
+          color="#ef4444" 
+        />
+
+        {/* 3. Fatura Atual - Emoji Cartão */}
+        <StatCard 
+          title="Fatura Atual 💳" 
+          value={stats.fatura} 
+          onClick={openCreditCalibration} 
+        />
+
+        {/* 4. Receitas do Mês - Fundo Verde, Texto Roxo, Emoji */}
+        <StatCard 
+          title="Receitas do Mês 🤩" 
+          value={stats.receitas} 
+          bgColor="#e2e585" 
+          textColor="#521256" 
+        />
         
-        {/* 3. Despesas Totais (SOMA TUDO) */}
-        <StatCard title="Despesas Totais" value={stats.totalGeralGastos} color={COLORS.NEGATIVE} />
+        {/* 5. Despesas Totais - Por Último, Vermelho + Emoji */}
+        <StatCard 
+          title="Despesas Totais 💰" 
+          value={stats.totalGeralGastos} 
+          color="#ef4444" 
+        />
 
-        {/* 4. Saídas da Conta (Só Débito) */}
-        <StatCard title="Saídas (Débito)" value={stats.despesasConta} />
-
-        {/* 5. Fatura Atual */}
-        <StatCard title="Fatura Atual" value={stats.fatura} onClick={openCreditCalibration} />
       </div>
 
       <div className="flex flex-wrap gap-4 items-center">
@@ -383,7 +393,6 @@ const Dashboard: React.FC<DashboardProps> = ({
         onOpenCategoryManager={onOpenCategoryManager}
       />
 
-      {/* MODAL DE DETALHES DA CATEGORIA */}
       {selectedCategory && (
         <div className="fixed inset-0 bg-[#521256]/60 backdrop-blur-md z-[150] flex items-center justify-center p-4 animate-in fade-in duration-200">
             <div className="bg-white rounded-[2.5rem] w-full max-w-md p-8 shadow-2xl animate-in zoom-in duration-300 max-h-[80vh] flex flex-col">
@@ -424,7 +433,6 @@ const Dashboard: React.FC<DashboardProps> = ({
         </div>
       )}
 
-      {/* MODAL DE PAGAMENTO DE FATURA / CALIBRAÇÃO */}
       {(isBalanceCalibrating || isCreditCalibrating || isLimitCalibrating || isPayingBill) && (
         <div className="fixed inset-0 bg-[#521256]/60 backdrop-blur-md z-[150] flex items-center justify-center p-4 animate-in fade-in duration-200">
           <div className="bg-white rounded-[2.5rem] w-full max-w-sm p-10 shadow-2xl animate-in zoom-in duration-300">
