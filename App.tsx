@@ -6,10 +6,11 @@ import History from './components/History';
 import Planning from './components/Planning';
 import Investments from './components/Investments';
 import Reports from './components/Reports';
+import Market from './components/Market'; 
 import CategoryManagerModal from './components/CategoryManagerModal';
 import MonthSelector from './components/MonthSelector';
-import { Transaction, CategoryBudget, InvestmentTransaction, User } from './types';
-import { INITIAL_CATEGORIES, INITIAL_BUDGETS } from './constants';
+import { Transaction, CategoryBudget, InvestmentTransaction, User, MarketItem } from './types';
+import { INITIAL_CATEGORIES } from './constants';
 import { auth, db } from './lib/firebase';
 import { onAuthStateChanged, signOut, updateProfile, updatePassword } from 'firebase/auth';
 import { 
@@ -22,11 +23,9 @@ const App: React.FC = () => {
   const [authLoading, setAuthLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('dashboard');
   
-  // --- ESTADOS DO PERFIL ---
   const [editName, setEditName] = useState('');
   const [editAvatar, setEditAvatar] = useState('');
   const [newPassword, setNewPassword] = useState('');
-  // -------------------------
 
   const [currentDate, setCurrentDate] = useState(new Date());
   const [allTransactions, setAllTransactions] = useState<Transaction[]>([]);
@@ -42,6 +41,7 @@ const App: React.FC = () => {
   const [budgets, setBudgets] = useState<CategoryBudget[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [investmentHistory, setInvestmentHistory] = useState<InvestmentTransaction[]>([]);
+  const [marketItems, setMarketItems] = useState<MarketItem[]>([]); 
 
   const [initialBalance, setInitialBalance] = useState<number>(0);
   const [initialCreditBill, setInitialCreditBill] = useState<number>(0);
@@ -100,23 +100,30 @@ const App: React.FC = () => {
       setCategories(Array.from(new Set([...INITIAL_CATEGORIES, ...dbCategories])).sort());
     });
 
-    // --- CARREGAMENTO DE ORÇAMENTOS (Mês a Mês) ---
     const qBudgets = query(collection(db, "budgets"), where("uid", "==", uid));
     const unsubBudgets = onSnapshot(qBudgets, (snapshot) => {
       const allBudgets = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as any));
-      
-      // Filtra aqui no código para pegar apenas os que pertencem ao Mês e Ano selecionados no calendário
       const currentMonthBudgets = allBudgets.filter((b: any) => 
         b.month === currentDate.getMonth() && 
         b.year === currentDate.getFullYear()
       );
-      
       setBudgets(currentMonthBudgets);
     });
 
     const qInv = query(collection(db, "investment_transactions"), where("uid", "==", uid));
     const unsubInv = onSnapshot(qInv, (snapshot) => {
       setInvestmentHistory(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as InvestmentTransaction)));
+    });
+
+    const qMarket = query(collection(db, "market_items"), where("uid", "==", uid));
+    const unsubMarket = onSnapshot(qMarket, (snapshot) => {
+      const allMarketItems = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as MarketItem));
+      const currentMonthMarketItems = allMarketItems.filter(item => {
+        const itemDate = new Date(item.date + 'T12:00:00');
+        return itemDate.getMonth() === currentDate.getMonth() &&
+               itemDate.getFullYear() === currentDate.getFullYear();
+      });
+      setMarketItems(currentMonthMarketItems);
     });
 
     const unsubSettings = onSnapshot(doc(db, "settings", uid), (docSnap) => {
@@ -128,10 +135,8 @@ const App: React.FC = () => {
       }
     });
 
-    return () => { unsubTrans(); unsubCats(); unsubBudgets(); unsubInv(); unsubSettings(); };
-  }, [currentUser, currentDate]); // Adicionamos currentDate aqui para recarregar quando mudar o mês
-
-  // --- Handlers ---
+    return () => { unsubTrans(); unsubCats(); unsubBudgets(); unsubInv(); unsubMarket(); unsubSettings(); };
+  }, [currentUser, currentDate]);
 
   const handleSaveProfile = async () => {
     if (!auth.currentUser || !currentUser) return;
@@ -161,29 +166,16 @@ const App: React.FC = () => {
   const updInv = async (u: any) => currentUser && updateDoc(doc(db, "investment_transactions", u.id), { ...u, uid: currentUser.id });
   const delInv = async (id: string) => deleteDoc(doc(db, "investment_transactions", id));
   
-  // --- ATUALIZAÇÃO DE TETO (SALVANDO COM MÊS E ANO) ---
+  const addMarketItem = async (t: any) => currentUser && addDoc(collection(db, "market_items"), { ...t, uid: currentUser.id });
+  const deleteMarketItem = async (id: string) => deleteDoc(doc(db, "market_items", id));
+
   const updBudg = async (c: string, l: number) => { 
     if(!currentUser) return; 
-    
-    // Verifica se já existe um teto para essa categoria NESTE MÊS
     const ex = budgets.find(b => b.category === c); 
-    
-    if(ex?.id) {
-      // Se existe, atualiza
-      await updateDoc(doc(db, "budgets", ex.id), { limit: l }); 
-    } else {
-      // Se não existe, cria um novo "carimbado" com o mês e ano atuais
-      await addDoc(collection(db, "budgets"), { 
-        category: c, 
-        limit: l, 
-        uid: currentUser.id,
-        month: currentDate.getMonth(),
-        year: currentDate.getFullYear()
-      });
-    }
+    if(ex?.id) { await updateDoc(doc(db, "budgets", ex.id), { limit: l }); } 
+    else { await addDoc(collection(db, "budgets"), { category: c, limit: l, uid: currentUser.id, month: currentDate.getMonth(), year: currentDate.getFullYear() }); }
   };
 
-  // --- DELETAR TETO (MESMA LÓGICA) ---
   const delBudg = async (category: string) => {
     if(!currentUser) return;
     const ex = budgets.find(b => b.category === category);
@@ -194,7 +186,7 @@ const App: React.FC = () => {
 
   const resetAllData = async () => {
     if (!currentUser) return;
-    const collectionsToClear = ["transactions", "categories", "budgets", "goals", "investment_transactions"];
+    const collectionsToClear = ["transactions", "categories", "budgets", "goals", "investment_transactions", "market_items"];
     try {
       for (const colName of collectionsToClear) {
         const q = query(collection(db, colName), where("uid", "==", currentUser.id));
@@ -238,6 +230,17 @@ const App: React.FC = () => {
                 onUpdateInitialBalance={(v) => updSet({ initialBalance: v })}
                 onUpdateInitialCreditBill={(v) => updSet({ initialCreditBill: v })}
                 onUpdateTotalCreditLimit={(v) => updSet({ totalCreditLimit: v })}
+              />
+            </div>
+          )}
+
+          {activeTab === 'market' && (
+            <div className="w-full pb-24 lg:pb-0">
+              {monthSelector}
+              <Market 
+                items={marketItems}
+                onAddItem={addMarketItem}
+                onDeleteItem={deleteMarketItem}
               />
             </div>
           )}
