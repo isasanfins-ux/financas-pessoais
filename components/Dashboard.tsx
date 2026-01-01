@@ -116,8 +116,10 @@ const Dashboard: React.FC<DashboardProps> = ({
     setIsModalOpen(true);
   };
 
+  // --- FUNÇÃO HANDLESAVE ATUALIZADA (REPETIÇÃO 12 MESES) ---
   const handleSave = (t: Partial<Transaction>) => {
-    const newTransaction: Transaction = {
+    // Função auxiliar para criar a transação
+    const createTransaction = (dateStr: string, index: number) => ({
       id: Math.random().toString(36).substring(7),
       description: t.description!,
       amount: t.amount!,
@@ -125,10 +127,30 @@ const Dashboard: React.FC<DashboardProps> = ({
       type: t.type!,
       paymentMethod: t.paymentMethod || PaymentMethod.DEBIT,
       isRecurring: t.isRecurring || false,
-      date: t.date!,
-      createdAt: Date.now()
-    } as any;
-    onAddTransaction(newTransaction);
+      date: dateStr,
+      createdAt: Date.now() + index // Pequeno incremento para manter a ordem se forem criados juntos
+    } as any);
+
+    if (t.isRecurring) {
+      // Se for recorrente, cria 12 vezes
+      const startDate = new Date(t.date! + 'T12:00:00'); // Garante fuso horário correto
+
+      for (let i = 0; i < 12; i++) {
+        const futureDate = new Date(startDate);
+        futureDate.setMonth(startDate.getMonth() + i);
+        
+        // Formata para YYYY-MM-DD
+        const isoDate = futureDate.toISOString().split('T')[0];
+        
+        const newTrans = createTransaction(isoDate, i);
+        onAddTransaction(newTrans);
+      }
+      alert("Lançamento fixo criado para os próximos 12 meses! 🗓️✨");
+    } else {
+      // Se não for recorrente, cria só uma vez
+      const newTransaction = createTransaction(t.date!, 0);
+      onAddTransaction(newTransaction);
+    }
   };
 
   const handlePayBill = () => {
