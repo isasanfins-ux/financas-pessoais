@@ -43,7 +43,6 @@ const Dashboard: React.FC<DashboardProps> = ({
 
   const PAYMENT_CATEGORY = "Pagamento de Fatura";
 
-  // Gráfico de Pizza
   const categoryData = useMemo(() => {
     const expenses = transactions.filter(t => 
       t.type === TransactionType.EXPENSE && 
@@ -66,7 +65,6 @@ const Dashboard: React.FC<DashboardProps> = ({
       .sort((a, b) => b.value - a.value);
   }, [transactions]);
 
-  // Cálculos dos Cards
   const stats = useMemo(() => {
     const receitas = transactions
       .filter(t => t.type === TransactionType.INCOME)
@@ -173,7 +171,6 @@ const Dashboard: React.FC<DashboardProps> = ({
     setIsLimitCalibrating(false);
   };
 
-  // Componente do Card Atualizado
   const StatCard = ({ title, value, color, bgColor = 'white', textColor = '#521256', onClick }: any) => (
     <div 
       onClick={onClick}
@@ -198,7 +195,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     <div className="space-y-8 animate-in fade-in duration-700 pb-10">
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
         
-        {/* 1. Saldo Disponível (Mantém) */}
+        {/* 1. Saldo Disponível */}
         <StatCard 
           title="Saldo Disponível" 
           value={stats.saldo} 
@@ -206,29 +203,29 @@ const Dashboard: React.FC<DashboardProps> = ({
           onClick={openBalanceCalibration} 
         />
 
-        {/* 2. Saídas (Débito) - Vem logo depois, Vermelho + Emoji */}
-        <StatCard 
-          title="Saídas (Débito) 🔻" 
-          value={stats.despesasConta} 
-          color="#ef4444" 
-        />
-
-        {/* 3. Fatura Atual - Emoji Cartão */}
-        <StatCard 
-          title="Fatura Atual 💳" 
-          value={stats.fatura} 
-          onClick={openCreditCalibration} 
-        />
-
-        {/* 4. Receitas do Mês - Fundo Verde, Texto Roxo, Emoji */}
+        {/* 2. Receitas do Mês - Fundo Verde */}
         <StatCard 
           title="Receitas do Mês 🤩" 
           value={stats.receitas} 
           bgColor="#e2e585" 
           textColor="#521256" 
         />
+
+        {/* 3. Saídas (Débito) - Vermelho */}
+        <StatCard 
+          title="Saídas (Débito) 🔻" 
+          value={stats.despesasConta} 
+          color="#ef4444" 
+        />
+
+        {/* 4. Fatura Atual - Emoji Cartão */}
+        <StatCard 
+          title="Fatura Atual 💳" 
+          value={stats.fatura} 
+          onClick={openCreditCalibration} 
+        />
         
-        {/* 5. Despesas Totais - Por Último, Vermelho + Emoji */}
+        {/* 5. Despesas Totais - Vermelho + Emoji */}
         <StatCard 
           title="Despesas Totais 💰" 
           value={stats.totalGeralGastos} 
