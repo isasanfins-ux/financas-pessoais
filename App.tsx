@@ -7,6 +7,7 @@ import Planning from './components/Planning';
 import Investments from './components/Investments';
 import Reports from './components/Reports';
 import Market from './components/Market'; 
+import ChatAssistant from './components/ChatAssistant'; // <--- IMPORT DO CHAT
 import CategoryManagerModal from './components/CategoryManagerModal';
 import MonthSelector from './components/MonthSelector';
 import { Transaction, CategoryBudget, InvestmentTransaction, User, MarketItem } from './types';
@@ -337,6 +338,15 @@ const App: React.FC = () => {
       )}
 
       {isResetConfirmOpen && ( <div className="fixed inset-0 bg-red-600/80 z-[250] flex items-center justify-center p-4"> <div className="bg-white p-8 rounded-2xl text-center"> <h3 className="font-black text-xl mb-4">Tem certeza?</h3> <button onClick={resetAllData} className="bg-red-600 text-white px-6 py-3 rounded-xl font-bold">Sim, apagar tudo</button> <button onClick={() => setIsResetConfirmOpen(false)} className="ml-4 text-gray-500 font-bold">Cancelar</button> </div> </div> )}
+      
+      {/* MIGA FINANCEIRA AQUI EMBAIXO 👇 */}
+      <ChatAssistant 
+        transactions={allTransactions}
+        marketItems={marketItems}
+        budgets={budgets}
+        currentBalance={initialBalance} 
+      />
+
     </Layout>
   );
 };
