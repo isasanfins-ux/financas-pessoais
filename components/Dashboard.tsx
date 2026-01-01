@@ -35,19 +35,15 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [modalType, setModalType] = useState<TransactionType>(TransactionType.EXPENSE);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
 
-  // Estados para Calibração e Pagamento de Fatura
   const [isBalanceCalibrating, setIsBalanceCalibrating] = useState(false);
   const [isCreditCalibrating, setIsCreditCalibrating] = useState(false);
   const [isLimitCalibrating, setIsLimitCalibrating] = useState(false);
   const [isPayingBill, setIsPayingBill] = useState(false);
   const [calibrationValue, setCalibrationValue] = useState('');
 
-  // Constante para identificar a categoria de pagamento
   const PAYMENT_CATEGORY = "Pagamento de Fatura";
 
-  // Processa dados para o gráfico de pizza (IGNORANDO O PAGAMENTO DE FATURA)
   const categoryData = useMemo(() => {
-    // Filtramos despesas que NÃO sejam o pagamento da fatura para não duplicar no gráfico
     const expenses = transactions.filter(t => 
       t.type === TransactionType.EXPENSE && 
       t.category !== PAYMENT_CATEGORY
@@ -75,7 +71,7 @@ const Dashboard: React.FC<DashboardProps> = ({
       .filter(t => t.type === TransactionType.INCOME)
       .reduce((acc, curr) => acc + curr.amount, 0);
 
-    // 2. Despesas Imediatas (Débito/Dinheiro/Pix) - Inclui o pagamento da fatura para abater do saldo
+    // 2. Despesas Imediatas (Débito/Dinheiro/Pix) - Isso inclui o pagamento da fatura
     const immediateExpenses = transactions
       .filter(t => t.type === TransactionType.EXPENSE && t.paymentMethod !== PaymentMethod.CREDIT_CARD)
       .reduce((acc, curr) => acc + curr.amount, 0);
@@ -85,17 +81,20 @@ const Dashboard: React.FC<DashboardProps> = ({
       .filter(t => t.type === TransactionType.EXPENSE && t.paymentMethod === PaymentMethod.CREDIT_CARD)
       .reduce((acc, curr) => acc + curr.amount, 0);
 
-    // 4. Pagamentos de Fatura Realizados (Abatem a fatura)
+    // 4. Pagamentos de Fatura Realizados (Para abater da dívida)
     const pagamentosFatura = transactions
       .filter(t => t.category === PAYMENT_CATEGORY)
       .reduce((acc, curr) => acc + curr.amount, 0);
 
-    // Cálculos Finais
-    // Fatura = (Inicial + Gastos Novos) - O que você já pagou
+    // --- CÁLCULOS FINAIS ---
+
+    // Fatura Atual = (Dívida Inicial + Novos Gastos) - O que você já pagou
     const faturaTotal = (initialCreditBill + faturaNovosGastos) - pagamentosFatura;
     
-    // Total de Despesas para mostrar no card (excluímos o pagamento da fatura aqui para não parecer que gastou o dobro)
-    const despesasParaMostrar = immediateExpenses + faturaNovosGastos - pagamentosFatura;
+    // MUDANÇA AQUI: Agora "Despesas do Mês" mostra APENAS o que saiu da conta corrente (Débito/Pix)
+    // E subtraímos o "Pagamento de Fatura" para ele não aparecer aqui (já que ele é apenas uma transferência para pagar o cartão)
+    // Assim, aqui fica apenas: Aluguel, Internet, MEI, etc.
+    const despesasParaMostrar = immediateExpenses - pagamentosFatura;
     
     const cardExpenses = transactions
       .filter(t => t.type === TransactionType.EXPENSE && t.paymentMethod === PaymentMethod.CREDIT_CARD)
@@ -103,10 +102,10 @@ const Dashboard: React.FC<DashboardProps> = ({
       .slice(0, 3);
 
     return {
-      saldo: initialBalance + receitas - immediateExpenses,
+      saldo: initialBalance + receitas - immediateExpenses, // O saldo continua descontando TUDO que saiu (inclusive pagamento de fatura)
       receitas,
-      despesasTotais: despesasParaMostrar,
-      fatura: Math.max(0, faturaTotal), // Não deixa ficar negativa visualmente
+      despesasTotais: despesasParaMostrar, // Agora mostra só as contas de débito/pix puras
+      fatura: Math.max(0, faturaTotal),
       limiteTotal: totalCreditLimit,
       cardExpenses
     };
@@ -135,31 +134,35 @@ const Dashboard: React.FC<DashboardProps> = ({
       type: t.type!,
       paymentMethod: t.paymentMethod || PaymentMethod.DEBIT,
       isRecurring: t.isRecurring || false,
-      date: t.date!
-    };
+      date: t.date!,
+      createdAt: Date.now()
+    } as any;
     onAddTransaction(newTransaction);
   };
 
-  // --- FUNÇÃO PARA SALVAR O PAGAMENTO DA FATURA ---
   const handlePayBill = () => {
     const val = parseFloat(calibrationValue.replace(',', '.'));
     if (!val) return;
+
+    const now = new Date();
+    const localDate = now.toLocaleDateString('pt-BR').split('/').reverse().join('-');
 
     const paymentTransaction: Transaction = {
       id: Math.random().toString(36).substring(7),
       description: 'Pagamento de Fatura 💳',
       amount: val,
-      category: PAYMENT_CATEGORY, // Categoria Mágica
+      category: PAYMENT_CATEGORY,
       type: TransactionType.EXPENSE,
-      paymentMethod: PaymentMethod.DEBIT, // Sai do saldo
+      paymentMethod: PaymentMethod.DEBIT, 
       isRecurring: false,
-      date: new Date().toISOString().split('T')[0]
-    };
+      date: localDate, 
+      createdAt: Date.now() 
+    } as any;
 
     onAddTransaction(paymentTransaction);
     setCalibrationValue('');
     setIsPayingBill(false);
-    alert("Pagamento registrado! Seu limite foi liberado. ✨");
+    alert("Pagamento registrado! Ele aparecerá no seu Extrato. ✨");
   };
 
   const openBalanceCalibration = () => { setCalibrationValue(initialBalance.toString()); setIsBalanceCalibrating(true); };
@@ -238,7 +241,6 @@ const Dashboard: React.FC<DashboardProps> = ({
           <div className="flex justify-between items-end mb-3">
             <span className="text-xs font-black text-[#f170c3] uppercase">Limite Utilizado ({progressPercentage.toFixed(0)}%)</span>
             <div className="flex gap-4 items-center">
-              {/* BOTÃO DE PAGAR FATURA */}
               <button 
                 onClick={() => setIsPayingBill(true)}
                 className="text-[10px] bg-[#521256] text-white px-3 py-1.5 rounded-full font-black hover:scale-105 transition-all shadow-md"
@@ -363,7 +365,6 @@ const Dashboard: React.FC<DashboardProps> = ({
         onOpenCategoryManager={onOpenCategoryManager}
       />
 
-      {/* MODAL DE DETALHES DA CATEGORIA */}
       {selectedCategory && (
         <div className="fixed inset-0 bg-[#521256]/60 backdrop-blur-md z-[150] flex items-center justify-center p-4 animate-in fade-in duration-200">
             <div className="bg-white rounded-[2.5rem] w-full max-w-md p-8 shadow-2xl animate-in zoom-in duration-300 max-h-[80vh] flex flex-col">
@@ -404,7 +405,6 @@ const Dashboard: React.FC<DashboardProps> = ({
         </div>
       )}
 
-      {/* MODAL DE PAGAMENTO DE FATURA / CALIBRAÇÃO */}
       {(isBalanceCalibrating || isCreditCalibrating || isLimitCalibrating || isPayingBill) && (
         <div className="fixed inset-0 bg-[#521256]/60 backdrop-blur-md z-[150] flex items-center justify-center p-4 animate-in fade-in duration-200">
           <div className="bg-white rounded-[2.5rem] w-full max-w-sm p-10 shadow-2xl animate-in zoom-in duration-300">
