@@ -48,7 +48,7 @@ const ChatAssistant: React.FC<ChatAssistantProps> = ({ transactions, marketItems
 
     try {
       // VOLTAMOS PARA O GEMINI-PRO (COMPATÍVEL COM SUA VERSÃO)
-      const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
       const financialContext = JSON.stringify({
         saldo_atual: currentBalance,
