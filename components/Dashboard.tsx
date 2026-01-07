@@ -5,9 +5,9 @@ import { CHART_COLORS, COLORS } from '../constants';
 import TransactionModal from './TransactionModal';
 
 interface DashboardProps {
-  transactions: Transaction[]; // Transações do mês (visualização da lista)
-  allTransactions: Transaction[]; // TODAS as transações (para calcular a fatura correta)
-  currentDate: Date; // Data atual do dashboard
+  transactions: Transaction[]; 
+  allTransactions: Transaction[]; 
+  currentDate: Date; 
   onAddTransaction: (t: Transaction) => void;
   categories?: string[];
   onAddCategory?: (name: string) => void;
@@ -18,7 +18,7 @@ interface DashboardProps {
   onUpdateInitialBalance: (val: number) => void;
   onUpdateInitialCreditBill: (val: number) => void;
   onUpdateTotalCreditLimit: (val: number) => void;
-  closingDay: number; // Dia de fechamento (para passar pro modal)
+  closingDay: number; 
 }
 
 const Dashboard: React.FC<DashboardProps> = ({ 
@@ -49,7 +49,7 @@ const Dashboard: React.FC<DashboardProps> = ({
 
   const PAYMENT_CATEGORY = "Pagamento de Fatura";
   
-  // Formatamos o mês atual do dashboard (Ex: '2026-01')
+  // Mês atual da fatura que estamos vendo (Ex: '2026-01')
   const currentInvoiceMonth = currentDate.toISOString().slice(0, 7);
 
   const categoryData = useMemo(() => {
@@ -75,27 +75,43 @@ const Dashboard: React.FC<DashboardProps> = ({
   }, [transactions]);
 
   const stats = useMemo(() => {
-    // Receitas (considera data da transação)
+    // Helper para verificar se a transação pertence à fatura atual
+    const belongsToCurrentInvoice = (t: Transaction) => {
+      // 1. Se tiver a etiqueta nova manual, usa ela (Prioridade Total)
+      if (t.invoiceMonth) {
+        return t.invoiceMonth === currentInvoiceMonth;
+      }
+
+      // 2. Se for antiga (sem etiqueta), usa a lógica automática do dia de fechamento
+      const tDate = new Date(t.date + 'T12:00:00');
+      const day = tDate.getDate();
+      
+      // Se comprou DEPOIS do fechamento, joga pro mês seguinte
+      if (day > closingDay) {
+        tDate.setMonth(tDate.getMonth() + 1);
+      }
+      
+      const calculatedMonth = tDate.toISOString().slice(0, 7);
+      return calculatedMonth === currentInvoiceMonth;
+    };
+
     const receitas = transactions
       .filter(t => t.type === TransactionType.INCOME)
       .reduce((acc, curr) => acc + curr.amount, 0);
 
-    // Despesas de Conta Corrente (considera data da transação)
     const immediateExpenses = transactions
       .filter(t => t.type === TransactionType.EXPENSE && t.paymentMethod !== PaymentMethod.CREDIT_CARD)
       .reduce((acc, curr) => acc + curr.amount, 0);
 
-    // --- AQUI ESTÁ A MÁGICA DA FATURA ---
-    // Filtramos em TODAS as transações aquelas que pertencem a ESTA fatura
+    // --- CORREÇÃO AQUI: USA A FUNÇÃO HÍBRIDA ---
     const faturaNovosGastos = allTransactions
       .filter(t => 
         t.type === TransactionType.EXPENSE && 
         t.paymentMethod === PaymentMethod.CREDIT_CARD &&
-        t.invoiceMonth === currentInvoiceMonth // <--- O PULO DO GATO 🐱
+        belongsToCurrentInvoice(t) // <--- Agora verifica etiquetas E datas antigas
       )
       .reduce((acc, curr) => acc + curr.amount, 0);
 
-    // Pagamentos de fatura feitos neste mês
     const pagamentosFatura = transactions
       .filter(t => t.category === PAYMENT_CATEGORY)
       .reduce((acc, curr) => acc + curr.amount, 0);
@@ -104,12 +120,11 @@ const Dashboard: React.FC<DashboardProps> = ({
     const despesasConta = immediateExpenses - pagamentosFatura;
     const totalGeralGastos = despesasConta + faturaNovosGastos;
     
-    // Lista de gastos da fatura para exibir no card
     const cardExpenses = allTransactions
       .filter(t => 
         t.type === TransactionType.EXPENSE && 
         t.paymentMethod === PaymentMethod.CREDIT_CARD &&
-        t.invoiceMonth === currentInvoiceMonth
+        belongsToCurrentInvoice(t) // <--- Aqui também
       )
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
       .slice(0, 3);
@@ -123,7 +138,7 @@ const Dashboard: React.FC<DashboardProps> = ({
       limiteTotal: totalCreditLimit,
       cardExpenses
     };
-  }, [transactions, allTransactions, initialBalance, initialCreditBill, totalCreditLimit, currentInvoiceMonth]);
+  }, [transactions, allTransactions, initialBalance, initialCreditBill, totalCreditLimit, currentInvoiceMonth, closingDay]);
 
   const progressPercentage = (stats.fatura / stats.limiteTotal) * 100;
 
@@ -149,7 +164,7 @@ const Dashboard: React.FC<DashboardProps> = ({
       paymentMethod: t.paymentMethod || PaymentMethod.DEBIT,
       isRecurring: t.isRecurring || false,
       date: t.date!,
-      invoiceMonth: t.invoiceMonth, // <--- Passando a fatura escolhida
+      invoiceMonth: t.invoiceMonth,
       createdAt: Date.now()
     } as any;
 
@@ -449,41 +464,4 @@ const Dashboard: React.FC<DashboardProps> = ({
         </div>
       )}
 
-      {(isBalanceCalibrating || isCreditCalibrating || isLimitCalibrating || isPayingBill) && (
-        <div className="fixed inset-0 bg-[#521256]/60 backdrop-blur-md z-[150] flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-white rounded-[2.5rem] w-full max-w-sm p-10 shadow-2xl animate-in zoom-in duration-300">
-            {/* ... CONTEÚDO IGUAL ... */}
-            <h3 className="text-xl font-black text-[#521256] mb-2 text-center">
-              {isPayingBill 
-                ? 'Pagar Fatura 💳'
-                : (isLimitCalibrating ? 'Definir Limite' : 'Calibrar ' + (isBalanceCalibrating ? 'Saldo' : 'Fatura')) + ' ✨'}
-            </h3>
-             <p className="text-xs font-bold text-[#521256]/40 mb-8 text-center uppercase tracking-widest">
-              {isPayingBill 
-                 ? 'Quanto você vai pagar/antecipar?' 
-                 : (isLimitCalibrating ? 'Qual é o limite somado dos cartões?' : (isBalanceCalibrating ? 'Saldo real atual?' : 'Gasto atual na fatura?'))}
-            </p>
-            <div className="mb-8">
-              <label className="text-[10px] font-black text-[#521256]/50 uppercase tracking-[0.2em] mb-2 block">Valor em R$</label>
-              <input 
-                autoFocus type="number" value={calibrationValue} onChange={(e) => setCalibrationValue(e.target.value)}
-                placeholder="0,00"
-                className="w-full px-6 py-5 bg-[#efd2fe]/30 rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#f170c3] text-[#521256] font-black text-3xl text-center"
-              />
-            </div>
-            <div className="flex flex-col gap-3">
-              <button onClick={isPayingBill ? handlePayBill : saveCalibration} className="w-full py-5 bg-[#521256] text-white font-black rounded-2xl shadow-xl hover:scale-[1.02] active:scale-95 transition-all">
-                {isPayingBill ? 'CONFIRMAR PAGAMENTO' : 'SALVAR AJUSTE'}
-              </button>
-              <button onClick={() => { setIsBalanceCalibrating(false); setIsCreditCalibrating(false); setIsLimitCalibrating(false); setIsPayingBill(false); }} className="w-full py-4 text-[#521256] font-black hover:bg-[#efd2fe]/50 rounded-2xl transition-colors text-sm">
-                CANCELAR
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};
-
-export default Dashboard;
+      {(isBalanceCal
