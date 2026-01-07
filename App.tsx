@@ -7,7 +7,7 @@ import Planning from './components/Planning';
 import Investments from './components/Investments';
 import Reports from './components/Reports';
 import Market from './components/Market'; 
-import ChatAssistant from './components/ChatAssistant'; // <--- IMPORT DO CHAT
+import ChatAssistant from './components/ChatAssistant';
 import CategoryManagerModal from './components/CategoryManagerModal';
 import MonthSelector from './components/MonthSelector';
 import { Transaction, CategoryBudget, InvestmentTransaction, User, MarketItem } from './types';
@@ -159,7 +159,37 @@ const App: React.FC = () => {
 
   const handleLogout = async () => { await signOut(auth); setIsSettingsOpen(false); };
   
-  const addTransaction = async (t: Omit<Transaction, 'id'>) => { if (currentUser) { await addDoc(collection(db, "transactions"), { ...t, uid: currentUser.id }); if (!categories.includes(t.category)) await addDoc(collection(db, "categories"), { name: t.category, uid: currentUser.id }); }};
+  // --- AQUI ESTÁ A CORREÇÃO DA REPETIÇÃO! 👇 ---
+  const addTransaction = async (t: Omit<Transaction, 'id'>) => { 
+    if (!currentUser) return; 
+
+    // Se for recorrente, cria 12 cópias
+    if (t.isRecurring) {
+        const startDate = new Date(t.date + 'T12:00:00');
+        for (let i = 0; i < 12; i++) {
+            const futureDate = new Date(startDate);
+            futureDate.setMonth(startDate.getMonth() + i);
+            const isoDate = futureDate.toISOString().split('T')[0];
+
+            await addDoc(collection(db, "transactions"), { 
+                ...t, 
+                date: isoDate, 
+                uid: currentUser.id,
+                createdAt: Date.now() + i // Incremento para manter ordem
+            });
+        }
+        alert("Despesa Fixa criada para os próximos 12 meses! 🗓️✨");
+    } else {
+        // Se não for, cria só uma vez
+        await addDoc(collection(db, "transactions"), { ...t, uid: currentUser.id });
+    }
+
+    // Salva a categoria se for nova
+    if (!categories.includes(t.category)) {
+        await addDoc(collection(db, "categories"), { name: t.category, uid: currentUser.id });
+    }
+  };
+
   const updateTransaction = async (u: Transaction) => { if (currentUser) { const { id, ...d } = u; await updateDoc(doc(db, "transactions", id), { ...d, uid: currentUser.id }); }};
   const deleteTransaction = async (id: string) => { await deleteDoc(doc(db, "transactions", id)); };
   
@@ -339,7 +369,6 @@ const App: React.FC = () => {
 
       {isResetConfirmOpen && ( <div className="fixed inset-0 bg-red-600/80 z-[250] flex items-center justify-center p-4"> <div className="bg-white p-8 rounded-2xl text-center"> <h3 className="font-black text-xl mb-4">Tem certeza?</h3> <button onClick={resetAllData} className="bg-red-600 text-white px-6 py-3 rounded-xl font-bold">Sim, apagar tudo</button> <button onClick={() => setIsResetConfirmOpen(false)} className="ml-4 text-gray-500 font-bold">Cancelar</button> </div> </div> )}
       
-      {/* MIGA FINANCEIRA AQUI EMBAIXO 👇 */}
       <ChatAssistant 
         transactions={allTransactions}
         marketItems={marketItems}
