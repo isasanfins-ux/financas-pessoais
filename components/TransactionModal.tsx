@@ -7,9 +7,10 @@ interface TransactionModalProps {
   onSave: (transaction: Partial<Transaction>) => void;
   type: TransactionType;
   availableCategories: string[];
-  initialData?: Transaction | null; // <--- AGORA ELE ACEITA DADOS PARA EDIÇÃO
+  initialData?: Transaction | null;
   onAddCategory?: (name: string) => void;
   onOpenCategoryManager?: () => void;
+  closingDay?: number; // <--- Recebe o dia de fechamento para calcular automático
 }
 
 const TransactionModal: React.FC<TransactionModalProps> = ({ 
@@ -18,8 +19,9 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
   onSave, 
   type,
   availableCategories,
-  initialData, // <--- Recebendo os dados
-  onOpenCategoryManager
+  initialData, 
+  onOpenCategoryManager,
+  closingDay = 1 // Padrão dia 1 se não tiver configurado
 }) => {
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
@@ -27,29 +29,51 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(PaymentMethod.DEBIT);
   const [isRecurring, setIsRecurring] = useState(false);
+  
+  // Novo estado para a Fatura de Referência
+  const [invoiceMonth, setInvoiceMonth] = useState('');
 
-  // EFEITO MÁGICO: Preenche os dados se for EDIÇÃO, ou limpa se for NOVO
+  // Função inteligente para calcular a fatura sugerida
+  const calculateInvoiceMonth = (purchaseDate: string) => {
+    const pDate = new Date(purchaseDate + 'T12:00:00');
+    const day = pDate.getDate();
+    
+    // Se comprou DEPOIS do fechamento, joga para o próximo mês
+    if (day > closingDay) {
+      pDate.setMonth(pDate.getMonth() + 1);
+    }
+    return pDate.toISOString().slice(0, 7); // Retorna 'YYYY-MM'
+  };
+
   useEffect(() => {
     if (isOpen) {
       if (initialData) {
-        // MODO EDIÇÃO: Carrega os dados existentes
         setDescription(initialData.description);
         setAmount(initialData.amount.toString());
         setCategory(initialData.category);
         setDate(initialData.date);
         setPaymentMethod(initialData.paymentMethod || PaymentMethod.DEBIT);
         setIsRecurring(initialData.isRecurring || false);
+        setInvoiceMonth(initialData.invoiceMonth || calculateInvoiceMonth(initialData.date));
       } else {
-        // MODO NOVO: Limpa tudo
         setDescription('');
         setAmount('');
         setCategory('');
-        setDate(new Date().toISOString().split('T')[0]);
+        const today = new Date().toISOString().split('T')[0];
+        setDate(today);
         setPaymentMethod(PaymentMethod.DEBIT);
         setIsRecurring(false);
+        setInvoiceMonth(calculateInvoiceMonth(today));
       }
     }
-  }, [isOpen, initialData]);
+  }, [isOpen, initialData, closingDay]);
+
+  // Atualiza a fatura sugerida se mudar a data da compra (e não for edição)
+  useEffect(() => {
+    if (!initialData && date) {
+       setInvoiceMonth(calculateInvoiceMonth(date));
+    }
+  }, [date, closingDay]);
 
   if (!isOpen) return null;
 
@@ -64,7 +88,9 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
       type,
       paymentMethod: type === TransactionType.EXPENSE ? paymentMethod : undefined,
       date,
-      isRecurring
+      isRecurring,
+      // Só salva invoiceMonth se for cartão de crédito
+      invoiceMonth: (type === TransactionType.EXPENSE && paymentMethod === PaymentMethod.CREDIT_CARD) ? invoiceMonth : undefined
     });
     onClose();
   };
@@ -74,7 +100,6 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
       <div className="bg-white rounded-[2.5rem] w-full max-w-md p-8 shadow-2xl animate-in zoom-in duration-300">
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-2xl font-black text-[#521256]">
-            {/* Muda o título dependendo se é Edição ou Novo */}
             {initialData ? 'Editar Lançamento ✏️' : (type === TransactionType.INCOME ? 'Nova Receita 🤑' : 'Nova Despesa 💸')}
           </h2>
           <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
@@ -86,7 +111,7 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
           <div>
             <label className="text-[10px] font-black opacity-40 uppercase tracking-widest ml-1">Descrição</label>
             <input 
-              autoFocus={!initialData} // Só foca automático se for novo
+              autoFocus={!initialData} 
               type="text" 
               value={description} 
               onChange={e => setDescription(e.target.value)} 
@@ -107,7 +132,7 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
               />
             </div>
             <div>
-              <label className="text-[10px] font-black opacity-40 uppercase tracking-widest ml-1">Data</label>
+              <label className="text-[10px] font-black opacity-40 uppercase tracking-widest ml-1">Data da Compra</label>
               <input 
                 type="date" 
                 value={date} 
@@ -132,6 +157,24 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
             </div>
           )}
 
+          {/* CAMPO DE FATURA - SÓ APARECE SE FOR CARTÃO DE CRÉDITO */}
+          {type === TransactionType.EXPENSE && paymentMethod === PaymentMethod.CREDIT_CARD && (
+            <div className="bg-[#fbbf24]/10 p-3 rounded-xl border border-[#fbbf24]/30 animate-in slide-in-from-top-2">
+              <label className="text-[10px] font-black text-[#d97706] uppercase tracking-widest ml-1 block mb-1">Fatura de Referência 📅</label>
+              <div className="flex gap-2 items-center">
+                 <input 
+                   type="month" 
+                   value={invoiceMonth}
+                   onChange={(e) => setInvoiceMonth(e.target.value)}
+                   className="w-full px-4 py-2 bg-white rounded-lg font-bold text-[#521256] focus:outline-none focus:ring-2 focus:ring-[#fbbf24]"
+                 />
+                 <div className="text-[10px] text-[#d97706] font-bold leading-tight max-w-[120px]">
+                   Esta compra será paga na fatura de {new Date(invoiceMonth + '-02').toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
+                 </div>
+              </div>
+            </div>
+          )}
+
           <div>
             <div className="flex justify-between items-center mb-1">
               <label className="text-[10px] font-black opacity-40 uppercase tracking-widest ml-1">Categoria</label>
@@ -147,7 +190,6 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
             </select>
           </div>
 
-          {/* SÓ MOSTRA A OPÇÃO DE RECORRÊNCIA SE FOR UM NOVO LANÇAMENTO */}
           {!initialData && (
             <div className="flex items-center gap-3 bg-[#efd2fe]/20 p-3 rounded-xl border border-[#efd2fe] mt-2">
               <div 
