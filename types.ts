@@ -1,4 +1,3 @@
-
 export enum TransactionType {
   EXPENSE = 'EXPENSE',
   INCOME = 'INCOME'
@@ -27,9 +26,9 @@ export interface Transaction {
   paymentMethod: PaymentMethod;
   isRecurring: boolean;
   date: string;
+  invoiceMonth?: string; // <--- NOVO: Formato 'YYYY-MM' (Ex: '2026-01')
 }
 
-// Added optional id to CategoryBudget to handle Firestore document IDs
 export interface CategoryBudget {
   id?: string;
   category: string;
@@ -63,4 +62,13 @@ export interface InvestmentTransaction {
   amount: number;
   date: string;
   type: 'deposit' | 'withdrawal';
+}
+
+export interface MarketItem {
+  id: string;
+  name: string;
+  amount: number;
+  type: 'essential' | 'luxury' | 'maintenance';
+  date: string;
+  quantity?: number;
 }
