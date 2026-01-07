@@ -31,6 +31,7 @@ const App: React.FC = () => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [allTransactions, setAllTransactions] = useState<Transaction[]>([]);
   
+  // Filtro visual (Lista) -> Pela data da compra
   const monthlyTransactions = useMemo(() => {
     return allTransactions.filter(t => {
       const tDate = new Date(t.date + 'T12:00:00');
@@ -47,6 +48,10 @@ const App: React.FC = () => {
   const [initialBalance, setInitialBalance] = useState<number>(0);
   const [initialCreditBill, setInitialCreditBill] = useState<number>(0);
   const [totalCreditLimit, setTotalCreditLimit] = useState<number>(5000);
+  
+  // NOVOS ESTADOS PARA O CARTÃO 💳
+  const [closingDay, setClosingDay] = useState<number>(6); // Default 06
+  const [dueDay, setDueDay] = useState<number>(13);       // Default 13
 
   const [isCatManagerOpen, setIsCatManagerOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -133,11 +138,24 @@ const App: React.FC = () => {
         setInitialBalance(data.initialBalance || 0);
         setInitialCreditBill(data.initialCreditBill || 0);
         setTotalCreditLimit(data.totalCreditLimit || 5000);
+        // Carrega configurações do cartão
+        if (data.closingDay) setClosingDay(data.closingDay);
+        if (data.dueDay) setDueDay(data.dueDay);
       }
     });
 
     return () => { unsubTrans(); unsubCats(); unsubBudgets(); unsubInv(); unsubMarket(); unsubSettings(); };
   }, [currentUser, currentDate]);
+
+  const updSet = async (u: any) => currentUser && setDoc(doc(db, "settings", currentUser.id), { 
+    initialBalance, 
+    initialCreditBill, 
+    totalCreditLimit,
+    closingDay,
+    dueDay,
+    ...u, 
+    uid: currentUser.id 
+  }, { merge: true });
 
   const handleSaveProfile = async () => {
     if (!auth.currentUser || !currentUser) return;
@@ -159,32 +177,40 @@ const App: React.FC = () => {
 
   const handleLogout = async () => { await signOut(auth); setIsSettingsOpen(false); };
   
-  // --- AQUI ESTÁ A CORREÇÃO DA REPETIÇÃO! 👇 ---
+  // --- FUNÇÃO DE ADICIONAR COM LÓGICA DE RECORRÊNCIA E FATURA 📅 ---
   const addTransaction = async (t: Omit<Transaction, 'id'>) => { 
     if (!currentUser) return; 
 
-    // Se for recorrente, cria 12 cópias
     if (t.isRecurring) {
+        // Se for recorrente, cria 12 cópias
         const startDate = new Date(t.date + 'T12:00:00');
+        let startInvoiceDate = t.invoiceMonth ? new Date(t.invoiceMonth + '-02') : null;
+
         for (let i = 0; i < 12; i++) {
             const futureDate = new Date(startDate);
             futureDate.setMonth(startDate.getMonth() + i);
             const isoDate = futureDate.toISOString().split('T')[0];
 
+            let futureInvoiceMonth = undefined;
+            if (startInvoiceDate) {
+               const fInvoice = new Date(startInvoiceDate);
+               fInvoice.setMonth(startInvoiceDate.getMonth() + i);
+               futureInvoiceMonth = fInvoice.toISOString().slice(0, 7); // 'YYYY-MM'
+            }
+
             await addDoc(collection(db, "transactions"), { 
                 ...t, 
                 date: isoDate, 
+                invoiceMonth: futureInvoiceMonth, // Incrementa a fatura também
                 uid: currentUser.id,
-                createdAt: Date.now() + i // Incremento para manter ordem
+                createdAt: Date.now() + i 
             });
         }
-        alert("Despesa Fixa criada para os próximos 12 meses! 🗓️✨");
+        alert("Lançamento fixo criado para os próximos 12 meses! 🗓️✨");
     } else {
-        // Se não for, cria só uma vez
         await addDoc(collection(db, "transactions"), { ...t, uid: currentUser.id });
     }
 
-    // Salva a categoria se for nova
     if (!categories.includes(t.category)) {
         await addDoc(collection(db, "categories"), { name: t.category, uid: currentUser.id });
     }
@@ -212,8 +238,6 @@ const App: React.FC = () => {
     const ex = budgets.find(b => b.category === category);
     if(ex?.id) await deleteDoc(doc(db, "budgets", ex.id));
   };
-
-  const updSet = async (u: any) => currentUser && setDoc(doc(db, "settings", currentUser.id), { ...u, uid: currentUser.id }, { merge: true });
 
   const resetAllData = async () => {
     if (!currentUser) return;
@@ -252,6 +276,8 @@ const App: React.FC = () => {
               {monthSelector}
               <Dashboard 
                 transactions={monthlyTransactions}
+                allTransactions={allTransactions} // Passando TODAS para cálculo da fatura
+                currentDate={currentDate} // Passando mês atual para saber qual fatura olhar
                 onAddTransaction={addTransaction}
                 categories={categories}
                 onOpenCategoryManager={() => setIsCatManagerOpen(true)}
@@ -261,6 +287,7 @@ const App: React.FC = () => {
                 onUpdateInitialBalance={(v) => updSet({ initialBalance: v })}
                 onUpdateInitialCreditBill={(v) => updSet({ initialCreditBill: v })}
                 onUpdateTotalCreditLimit={(v) => updSet({ totalCreditLimit: v })}
+                closingDay={closingDay} // Passando dia de fechamento
               />
             </div>
           )}
@@ -268,11 +295,7 @@ const App: React.FC = () => {
           {activeTab === 'market' && (
             <div className="w-full pb-24 lg:pb-0">
               {monthSelector}
-              <Market 
-                items={marketItems}
-                onAddItem={addMarketItem}
-                onDeleteItem={deleteMarketItem}
-              />
+              <Market items={marketItems} onAddItem={addMarketItem} onDeleteItem={deleteMarketItem} />
             </div>
           )}
 
@@ -284,39 +307,21 @@ const App: React.FC = () => {
 
           {activeTab === 'investments' && (
             <div className="w-full pb-24 lg:pb-0">
-              <Investments 
-                history={investmentHistory}
-                onAddTransaction={addInv}
-                onUpdateTransaction={updInv}
-                onDeleteTransaction={delInv}
-              />
+              <Investments history={investmentHistory} onAddTransaction={addInv} onUpdateTransaction={updInv} onDeleteTransaction={delInv} />
             </div>
           )}
 
           {activeTab === 'planning' && (
             <div className="w-full pb-24 lg:pb-0">
               {monthSelector}
-              <Planning 
-                transactions={monthlyTransactions} 
-                budgets={budgets} 
-                categories={categories}
-                onUpdateBudget={updBudg}
-                onDeleteBudget={delBudg}
-              />
+              <Planning transactions={monthlyTransactions} budgets={budgets} categories={categories} onUpdateBudget={updBudg} onDeleteBudget={delBudg} />
             </div>
           )}
 
           {activeTab === 'history' && (
             <div className="w-full max-w-5xl mx-auto pb-24 lg:pb-0">
               {monthSelector}
-              <History 
-                transactions={monthlyTransactions}
-                onAddTransaction={addTransaction}
-                onUpdateTransaction={updateTransaction}
-                onDeleteTransaction={deleteTransaction}
-                categories={categories}
-                onOpenCategoryManager={() => setIsCatManagerOpen(true)}
-              />
+              <History transactions={monthlyTransactions} onAddTransaction={addTransaction} onUpdateTransaction={updateTransaction} onDeleteTransaction={deleteTransaction} categories={categories} onOpenCategoryManager={() => setIsCatManagerOpen(true)} />
             </div>
           )}
         </div>
@@ -336,6 +341,7 @@ const App: React.FC = () => {
              </div>
 
              <div className="space-y-5">
+                {/* ... inputs de nome/avatar ... */}
                 <div>
                   <label className="text-[10px] font-black text-[#521256]/50 uppercase tracking-widest mb-1 block">Seu Nome</label>
                   <input type="text" value={editName} onChange={(e) => setEditName(e.target.value)} className="w-full px-4 py-3 bg-[#efd2fe]/30 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#f170c3] text-[#521256] font-bold" />
@@ -343,7 +349,6 @@ const App: React.FC = () => {
                 <div>
                   <label className="text-[10px] font-black text-[#521256]/50 uppercase tracking-widest mb-1 block">Link da Foto (URL)</label>
                   <input type="text" value={editAvatar} onChange={(e) => setEditAvatar(e.target.value)} placeholder="https://..." className="w-full px-4 py-3 bg-[#efd2fe]/30 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#f170c3] text-[#521256] font-bold text-xs" />
-                  <p className="text-[9px] text-[#521256]/40 mt-1">Dica: Copie o link de uma imagem do Google, Pinterest ou Bitmoji.</p>
                 </div>
                 <div>
                   <label className="text-[10px] font-black text-[#521256]/50 uppercase tracking-widest mb-1 block">E-mail (Login)</label>
@@ -352,6 +357,43 @@ const App: React.FC = () => {
                     {currentUser?.email}
                   </div>
                 </div>
+
+                {/* --- CONFIGURAÇÃO DO CARTÃO 💳 --- */}
+                <div className="pt-4 border-t border-[#efd2fe]">
+                  <h4 className="text-xs font-black text-[#521256] uppercase mb-3">Configuração do Cartão 💳</h4>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-[10px] font-black text-[#521256]/50 uppercase tracking-widest mb-1 block">Dia Fechamento</label>
+                      <input 
+                        type="number" 
+                        min="1" max="31"
+                        value={closingDay} 
+                        onChange={(e) => {
+                          const val = Number(e.target.value);
+                          setClosingDay(val);
+                          updSet({ closingDay: val });
+                        }} 
+                        className="w-full px-4 py-3 bg-[#efd2fe]/30 rounded-xl font-bold text-[#521256] text-center focus:outline-none focus:ring-2 focus:ring-[#f170c3]" 
+                      />
+                      <p className="text-[9px] text-[#521256]/40 mt-1">Dia que a fatura vira.</p>
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-black text-[#521256]/50 uppercase tracking-widest mb-1 block">Dia Vencimento</label>
+                      <input 
+                        type="number" 
+                        min="1" max="31"
+                        value={dueDay} 
+                        onChange={(e) => {
+                          const val = Number(e.target.value);
+                          setDueDay(val);
+                          updSet({ dueDay: val });
+                        }} 
+                        className="w-full px-4 py-3 bg-[#efd2fe]/30 rounded-xl font-bold text-[#521256] text-center focus:outline-none focus:ring-2 focus:ring-[#f170c3]" 
+                      />
+                    </div>
+                  </div>
+                </div>
+
                 <div className="pt-2 border-t border-[#efd2fe]">
                   <label className="text-[10px] font-black text-[#f170c3] uppercase tracking-widest mb-1 block">Alterar Senha (Opcional)</label>
                   <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="Nova senha..." className="w-full px-4 py-3 bg-white border-2 border-[#efd2fe] rounded-xl focus:outline-none focus:ring-2 focus:ring-[#f170c3] text-[#521256] font-bold" />
