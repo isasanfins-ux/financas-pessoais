@@ -7,6 +7,7 @@ interface TransactionModalProps {
   onSave: (transaction: Partial<Transaction>) => void;
   type: TransactionType;
   availableCategories: string[];
+  initialData?: Transaction | null; // <--- AGORA ELE ACEITA DADOS PARA EDIÇÃO
   onAddCategory?: (name: string) => void;
   onOpenCategoryManager?: () => void;
 }
@@ -17,6 +18,7 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
   onSave, 
   type,
   availableCategories,
+  initialData, // <--- Recebendo os dados
   onOpenCategoryManager
 }) => {
   const [description, setDescription] = useState('');
@@ -24,21 +26,30 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
   const [category, setCategory] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(PaymentMethod.DEBIT);
-  
-  // AQUI ESTÁ A CHAVINHA NOVA! ✨
   const [isRecurring, setIsRecurring] = useState(false);
 
-  // Reseta o formulário quando abre
+  // EFEITO MÁGICO: Preenche os dados se for EDIÇÃO, ou limpa se for NOVO
   useEffect(() => {
     if (isOpen) {
-      setDescription('');
-      setAmount('');
-      setCategory('');
-      setDate(new Date().toISOString().split('T')[0]);
-      setPaymentMethod(PaymentMethod.DEBIT);
-      setIsRecurring(false);
+      if (initialData) {
+        // MODO EDIÇÃO: Carrega os dados existentes
+        setDescription(initialData.description);
+        setAmount(initialData.amount.toString());
+        setCategory(initialData.category);
+        setDate(initialData.date);
+        setPaymentMethod(initialData.paymentMethod || PaymentMethod.DEBIT);
+        setIsRecurring(initialData.isRecurring || false);
+      } else {
+        // MODO NOVO: Limpa tudo
+        setDescription('');
+        setAmount('');
+        setCategory('');
+        setDate(new Date().toISOString().split('T')[0]);
+        setPaymentMethod(PaymentMethod.DEBIT);
+        setIsRecurring(false);
+      }
     }
-  }, [isOpen]);
+  }, [isOpen, initialData]);
 
   if (!isOpen) return null;
 
@@ -53,7 +64,7 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
       type,
       paymentMethod: type === TransactionType.EXPENSE ? paymentMethod : undefined,
       date,
-      isRecurring // Enviando o comando para o App
+      isRecurring
     });
     onClose();
   };
@@ -63,7 +74,8 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
       <div className="bg-white rounded-[2.5rem] w-full max-w-md p-8 shadow-2xl animate-in zoom-in duration-300">
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-2xl font-black text-[#521256]">
-            {type === TransactionType.INCOME ? 'Nova Receita 🤑' : 'Nova Despesa 💸'}
+            {/* Muda o título dependendo se é Edição ou Novo */}
+            {initialData ? 'Editar Lançamento ✏️' : (type === TransactionType.INCOME ? 'Nova Receita 🤑' : 'Nova Despesa 💸')}
           </h2>
           <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
             <svg className="w-6 h-6 text-[#521256]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
@@ -74,7 +86,7 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
           <div>
             <label className="text-[10px] font-black opacity-40 uppercase tracking-widest ml-1">Descrição</label>
             <input 
-              autoFocus
+              autoFocus={!initialData} // Só foca automático se for novo
               type="text" 
               value={description} 
               onChange={e => setDescription(e.target.value)} 
@@ -135,22 +147,24 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
             </select>
           </div>
 
-          {/* TOGGLE DE RECORRÊNCIA */}
-          <div className="flex items-center gap-3 bg-[#efd2fe]/20 p-3 rounded-xl border border-[#efd2fe] mt-2">
-            <div 
-              onClick={() => setIsRecurring(!isRecurring)}
-              className={`w-10 h-6 flex items-center rounded-full p-1 cursor-pointer transition-colors duration-300 ${isRecurring ? 'bg-[#f170c3]' : 'bg-gray-300'}`}
-            >
-              <div className={`bg-white w-4 h-4 rounded-full shadow-md transform duration-300 ${isRecurring ? 'translate-x-4' : 'translate-x-0'}`}></div>
+          {/* SÓ MOSTRA A OPÇÃO DE RECORRÊNCIA SE FOR UM NOVO LANÇAMENTO */}
+          {!initialData && (
+            <div className="flex items-center gap-3 bg-[#efd2fe]/20 p-3 rounded-xl border border-[#efd2fe] mt-2">
+              <div 
+                onClick={() => setIsRecurring(!isRecurring)}
+                className={`w-10 h-6 flex items-center rounded-full p-1 cursor-pointer transition-colors duration-300 ${isRecurring ? 'bg-[#f170c3]' : 'bg-gray-300'}`}
+              >
+                <div className={`bg-white w-4 h-4 rounded-full shadow-md transform duration-300 ${isRecurring ? 'translate-x-4' : 'translate-x-0'}`}></div>
+              </div>
+              <div>
+                <p className="font-bold text-[#521256] text-xs">Recorrente (12x)</p>
+                <p className="text-[9px] opacity-60">Repetir esse valor pelos próximos meses</p>
+              </div>
             </div>
-            <div>
-              <p className="font-bold text-[#521256] text-xs">Recorrente (12x)</p>
-              <p className="text-[9px] opacity-60">Repetir esse valor pelos próximos meses</p>
-            </div>
-          </div>
+          )}
 
           <button type="submit" className="w-full py-4 bg-[#521256] text-white font-black rounded-xl hover:scale-[1.01] active:scale-95 transition-all shadow-lg mt-4">
-            SALVAR
+            {initialData ? 'SALVAR ALTERAÇÕES' : 'ADICIONAR'}
           </button>
         </form>
       </div>
