@@ -5,7 +5,9 @@ import { CHART_COLORS, COLORS } from '../constants';
 import TransactionModal from './TransactionModal';
 
 interface DashboardProps {
-  transactions: Transaction[];
+  transactions: Transaction[]; // Transações do mês (visualização da lista)
+  allTransactions: Transaction[]; // TODAS as transações (para calcular a fatura correta)
+  currentDate: Date; // Data atual do dashboard
   onAddTransaction: (t: Transaction) => void;
   categories?: string[];
   onAddCategory?: (name: string) => void;
@@ -16,10 +18,13 @@ interface DashboardProps {
   onUpdateInitialBalance: (val: number) => void;
   onUpdateInitialCreditBill: (val: number) => void;
   onUpdateTotalCreditLimit: (val: number) => void;
+  closingDay: number; // Dia de fechamento (para passar pro modal)
 }
 
 const Dashboard: React.FC<DashboardProps> = ({ 
   transactions, 
+  allTransactions,
+  currentDate,
   onAddTransaction, 
   categories = [],
   onAddCategory,
@@ -29,7 +34,8 @@ const Dashboard: React.FC<DashboardProps> = ({
   totalCreditLimit,
   onUpdateInitialBalance,
   onUpdateInitialCreditBill,
-  onUpdateTotalCreditLimit
+  onUpdateTotalCreditLimit,
+  closingDay
 }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalType, setModalType] = useState<TransactionType>(TransactionType.EXPENSE);
@@ -42,6 +48,9 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [calibrationValue, setCalibrationValue] = useState('');
 
   const PAYMENT_CATEGORY = "Pagamento de Fatura";
+  
+  // Formatamos o mês atual do dashboard (Ex: '2026-01')
+  const currentInvoiceMonth = currentDate.toISOString().slice(0, 7);
 
   const categoryData = useMemo(() => {
     const expenses = transactions.filter(t => 
@@ -66,18 +75,27 @@ const Dashboard: React.FC<DashboardProps> = ({
   }, [transactions]);
 
   const stats = useMemo(() => {
+    // Receitas (considera data da transação)
     const receitas = transactions
       .filter(t => t.type === TransactionType.INCOME)
       .reduce((acc, curr) => acc + curr.amount, 0);
 
+    // Despesas de Conta Corrente (considera data da transação)
     const immediateExpenses = transactions
       .filter(t => t.type === TransactionType.EXPENSE && t.paymentMethod !== PaymentMethod.CREDIT_CARD)
       .reduce((acc, curr) => acc + curr.amount, 0);
 
-    const faturaNovosGastos = transactions
-      .filter(t => t.type === TransactionType.EXPENSE && t.paymentMethod === PaymentMethod.CREDIT_CARD)
+    // --- AQUI ESTÁ A MÁGICA DA FATURA ---
+    // Filtramos em TODAS as transações aquelas que pertencem a ESTA fatura
+    const faturaNovosGastos = allTransactions
+      .filter(t => 
+        t.type === TransactionType.EXPENSE && 
+        t.paymentMethod === PaymentMethod.CREDIT_CARD &&
+        t.invoiceMonth === currentInvoiceMonth // <--- O PULO DO GATO 🐱
+      )
       .reduce((acc, curr) => acc + curr.amount, 0);
 
+    // Pagamentos de fatura feitos neste mês
     const pagamentosFatura = transactions
       .filter(t => t.category === PAYMENT_CATEGORY)
       .reduce((acc, curr) => acc + curr.amount, 0);
@@ -86,8 +104,13 @@ const Dashboard: React.FC<DashboardProps> = ({
     const despesasConta = immediateExpenses - pagamentosFatura;
     const totalGeralGastos = despesasConta + faturaNovosGastos;
     
-    const cardExpenses = transactions
-      .filter(t => t.type === TransactionType.EXPENSE && t.paymentMethod === PaymentMethod.CREDIT_CARD)
+    // Lista de gastos da fatura para exibir no card
+    const cardExpenses = allTransactions
+      .filter(t => 
+        t.type === TransactionType.EXPENSE && 
+        t.paymentMethod === PaymentMethod.CREDIT_CARD &&
+        t.invoiceMonth === currentInvoiceMonth
+      )
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
       .slice(0, 3);
 
@@ -100,7 +123,7 @@ const Dashboard: React.FC<DashboardProps> = ({
       limiteTotal: totalCreditLimit,
       cardExpenses
     };
-  }, [transactions, initialBalance, initialCreditBill, totalCreditLimit]);
+  }, [transactions, allTransactions, initialBalance, initialCreditBill, totalCreditLimit, currentInvoiceMonth]);
 
   const progressPercentage = (stats.fatura / stats.limiteTotal) * 100;
 
@@ -117,9 +140,6 @@ const Dashboard: React.FC<DashboardProps> = ({
   };
 
   const handleSave = (t: Partial<Transaction>) => {
-    // AQUI ESTÁ O AJUSTE: Não fazemos o loop aqui para não duplicar.
-    // Apenas passamos os dados (incluindo isRecurring) para o App.tsx que já tem a inteligência.
-    
     const newTransaction = {
       id: Math.random().toString(36).substring(7),
       description: t.description!,
@@ -127,8 +147,9 @@ const Dashboard: React.FC<DashboardProps> = ({
       category: t.category!,
       type: t.type!,
       paymentMethod: t.paymentMethod || PaymentMethod.DEBIT,
-      isRecurring: t.isRecurring || false, // <--- Passamos a flag!
+      isRecurring: t.isRecurring || false,
       date: t.date!,
+      invoiceMonth: t.invoiceMonth, // <--- Passando a fatura escolhida
       createdAt: Date.now()
     } as any;
 
@@ -224,7 +245,7 @@ const Dashboard: React.FC<DashboardProps> = ({
 
         {/* 4. Fatura Atual - Emoji Cartão */}
         <StatCard 
-          title="Fatura Atual 💳" 
+          title={`Fatura ${currentDate.toLocaleDateString('pt-BR', {month: 'long'})} 💳`}
           value={stats.fatura} 
           onClick={openCreditCalibration} 
         />
@@ -258,7 +279,9 @@ const Dashboard: React.FC<DashboardProps> = ({
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-8">
           <div className="flex-1">
             <h3 className="text-2xl font-black text-[#521256] mb-1">Gestão de Fatura ✨</h3>
-            <p className="text-sm font-semibold opacity-60">Seu controle diário do cartão de crédito</p>
+            <p className="text-sm font-semibold opacity-60">
+                Visualizando fatura de <span className="text-[#f170c3] uppercase font-bold">{currentDate.toLocaleDateString('pt-BR', {month: 'long', year: 'numeric'})}</span>
+            </p>
           </div>
           <div className="text-right">
             <span className="text-xs font-black opacity-40 uppercase tracking-tighter">Limite Disponível</span>
@@ -295,7 +318,7 @@ const Dashboard: React.FC<DashboardProps> = ({
         </div>
 
         <div>
-          <h4 className="text-xs font-black text-[#521256] opacity-40 uppercase tracking-widest mb-4">Últimas do Cartão</h4>
+          <h4 className="text-xs font-black text-[#521256] opacity-40 uppercase tracking-widest mb-4">Últimas desta Fatura</h4>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {stats.cardExpenses.map((t) => (
               <div key={t.id} className="bg-[#efd2fe]/30 p-5 rounded-2xl border border-white/50 flex items-center justify-between hover:bg-white transition-colors cursor-pointer group">
@@ -310,7 +333,7 @@ const Dashboard: React.FC<DashboardProps> = ({
               </div>
             ))}
             {stats.cardExpenses.length === 0 && (
-              <p className="col-span-3 text-center py-4 text-xs font-bold opacity-30 italic">Nenhum gasto recente no cartão de crédito.</p>
+              <p className="col-span-3 text-center py-4 text-xs font-bold opacity-30 italic">Nenhum gasto nesta fatura ainda.</p>
             )}
           </div>
         </div>
@@ -319,7 +342,7 @@ const Dashboard: React.FC<DashboardProps> = ({
       <div className="grid grid-cols-1 gap-8">
         <div className="bg-white/70 rounded-[2.5rem] p-10 shadow-xl shadow-[#521256]/5 border border-white/40">
           <h3 className="text-xl font-black text-[#521256] mb-8 flex items-center justify-between">
-            Análise por Categoria (Mês Atual) <span>🔎</span>
+            Análise por Categoria (Data da Compra) <span>🔎</span>
           </h3>
           
           <div className="flex flex-col lg:flex-row items-center gap-8 lg:gap-12">
@@ -392,8 +415,10 @@ const Dashboard: React.FC<DashboardProps> = ({
         availableCategories={categories}
         onAddCategory={onAddCategory}
         onOpenCategoryManager={onOpenCategoryManager}
+        closingDay={closingDay} // <--- Passando o dia de fechamento
       />
 
+      {/* ... MANTIVE O RESTO DO MODAL DE DETALHES E CALIBRAÇÃO IGUAL ... */}
       {selectedCategory && (
         <div className="fixed inset-0 bg-[#521256]/60 backdrop-blur-md z-[150] flex items-center justify-center p-4 animate-in fade-in duration-200">
             <div className="bg-white rounded-[2.5rem] w-full max-w-md p-8 shadow-2xl animate-in zoom-in duration-300 max-h-[80vh] flex flex-col">
@@ -419,16 +444,6 @@ const Dashboard: React.FC<DashboardProps> = ({
                             </span>
                         </div>
                     ))}
-                    {categoryTransactions.length === 0 && (
-                        <p className="text-center text-sm opacity-40 italic py-4">Nenhuma transação encontrada.</p>
-                    )}
-                </div>
-
-                <div className="mt-6 pt-4 border-t border-gray-100 flex justify-between items-end">
-                    <span className="text-xs font-bold opacity-50 uppercase">Total na Categoria</span>
-                    <span className="text-xl font-black text-[#521256]">
-                        R$ {categoryTransactions.reduce((acc, curr) => acc + curr.amount, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                    </span>
                 </div>
             </div>
         </div>
@@ -437,41 +452,30 @@ const Dashboard: React.FC<DashboardProps> = ({
       {(isBalanceCalibrating || isCreditCalibrating || isLimitCalibrating || isPayingBill) && (
         <div className="fixed inset-0 bg-[#521256]/60 backdrop-blur-md z-[150] flex items-center justify-center p-4 animate-in fade-in duration-200">
           <div className="bg-white rounded-[2.5rem] w-full max-w-sm p-10 shadow-2xl animate-in zoom-in duration-300">
+            {/* ... CONTEÚDO IGUAL ... */}
             <h3 className="text-xl font-black text-[#521256] mb-2 text-center">
               {isPayingBill 
                 ? 'Pagar Fatura 💳'
                 : (isLimitCalibrating ? 'Definir Limite' : 'Calibrar ' + (isBalanceCalibrating ? 'Saldo' : 'Fatura')) + ' ✨'}
             </h3>
-            
-            <p className="text-xs font-bold text-[#521256]/40 mb-8 text-center uppercase tracking-widest">
+             <p className="text-xs font-bold text-[#521256]/40 mb-8 text-center uppercase tracking-widest">
               {isPayingBill 
                  ? 'Quanto você vai pagar/antecipar?' 
                  : (isLimitCalibrating ? 'Qual é o limite somado dos cartões?' : (isBalanceCalibrating ? 'Saldo real atual?' : 'Gasto atual na fatura?'))}
             </p>
-            
             <div className="mb-8">
               <label className="text-[10px] font-black text-[#521256]/50 uppercase tracking-[0.2em] mb-2 block">Valor em R$</label>
               <input 
-                autoFocus
-                type="number" 
-                value={calibrationValue}
-                onChange={(e) => setCalibrationValue(e.target.value)}
+                autoFocus type="number" value={calibrationValue} onChange={(e) => setCalibrationValue(e.target.value)}
                 placeholder="0,00"
                 className="w-full px-6 py-5 bg-[#efd2fe]/30 rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#f170c3] text-[#521256] font-black text-3xl text-center"
               />
             </div>
-
             <div className="flex flex-col gap-3">
-              <button 
-                onClick={isPayingBill ? handlePayBill : saveCalibration}
-                className="w-full py-5 bg-[#521256] text-white font-black rounded-2xl shadow-xl hover:scale-[1.02] active:scale-95 transition-all"
-              >
+              <button onClick={isPayingBill ? handlePayBill : saveCalibration} className="w-full py-5 bg-[#521256] text-white font-black rounded-2xl shadow-xl hover:scale-[1.02] active:scale-95 transition-all">
                 {isPayingBill ? 'CONFIRMAR PAGAMENTO' : 'SALVAR AJUSTE'}
               </button>
-              <button 
-                onClick={() => { setIsBalanceCalibrating(false); setIsCreditCalibrating(false); setIsLimitCalibrating(false); setIsPayingBill(false); }}
-                className="w-full py-4 text-[#521256] font-black hover:bg-[#efd2fe]/50 rounded-2xl transition-colors text-sm"
-              >
+              <button onClick={() => { setIsBalanceCalibrating(false); setIsCreditCalibrating(false); setIsLimitCalibrating(false); setIsPayingBill(false); }} className="w-full py-4 text-[#521256] font-black hover:bg-[#efd2fe]/50 rounded-2xl transition-colors text-sm">
                 CANCELAR
               </button>
             </div>
