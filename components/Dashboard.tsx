@@ -6,7 +6,7 @@ import TransactionModal from './TransactionModal';
 
 interface DashboardProps {
   transactions: Transaction[]; 
-  allTransactions: Transaction[]; 
+  allTransactions: Transaction[]; // Obrigatório agora
   currentDate: Date; 
   onAddTransaction: (t: Transaction) => void;
   categories?: string[];
@@ -15,30 +15,30 @@ interface DashboardProps {
   initialBalance: number;
   initialCreditBill: number;
   totalCreditLimit: number;
-  nextMonthInvoice: number; // NOVO: Valor manual
+  nextMonthInvoice: number; // Campo manual
   onUpdateInitialBalance: (val: number) => void;
   onUpdateInitialCreditBill: (val: number) => void;
   onUpdateTotalCreditLimit: (val: number) => void;
-  onUpdateNextMonthInvoice: (val: number) => void; // NOVO: Função salvar
+  onUpdateNextMonthInvoice: (val: number) => void; // Função salvar manual
   closingDay?: number; 
 }
 
 const Dashboard: React.FC<DashboardProps> = ({ 
-  transactions = [], 
-  allTransactions = [], 
+  transactions, 
+  allTransactions, 
   currentDate,
   onAddTransaction, 
   categories = [],
   onAddCategory,
   onOpenCategoryManager,
-  initialBalance = 0,
-  initialCreditBill = 0,
-  totalCreditLimit = 0,
-  nextMonthInvoice = 0, // Valor padrão
+  initialBalance,
+  initialCreditBill,
+  totalCreditLimit,
+  nextMonthInvoice,
   onUpdateInitialBalance,
   onUpdateInitialCreditBill,
   onUpdateTotalCreditLimit,
-  onUpdateNextMonthInvoice, // Recebe a função do App
+  onUpdateNextMonthInvoice,
   closingDay = 6 
 }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -48,71 +48,90 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [isBalanceCalibrating, setIsBalanceCalibrating] = useState(false);
   const [isCreditCalibrating, setIsCreditCalibrating] = useState(false);
   const [isLimitCalibrating, setIsLimitCalibrating] = useState(false);
-  const [isNextInvoiceCalibrating, setIsNextInvoiceCalibrating] = useState(false); // Modal da fatura manual
+  const [isNextInvoiceCalibrating, setIsNextInvoiceCalibrating] = useState(false);
   const [isPayingBill, setIsPayingBill] = useState(false);
   const [calibrationValue, setCalibrationValue] = useState('');
 
   const PAYMENT_CATEGORY = "Pagamento de Fatura";
-  const currentInvoiceMonth = (currentDate || new Date()).toISOString().slice(0, 7);
+  const currentInvoiceMonth = currentDate.toISOString().slice(0, 7);
 
+  // DADOS DO GRÁFICO (Usa 'transactions' do mês atual - Calendário)
   const categoryData = useMemo(() => {
-    if(!transactions) return [];
-    const expenses = transactions.filter(t => t.type === TransactionType.EXPENSE && t.category !== PAYMENT_CATEGORY);
+    const expenses = transactions.filter(t => 
+      t.type === TransactionType.EXPENSE && 
+      t.category !== PAYMENT_CATEGORY
+    );
     const summary: Record<string, number> = {};
     expenses.forEach(t => { summary[t.category] = (summary[t.category] || 0) + t.amount; });
     const total = Object.values(summary).reduce((a, b) => a + b, 0);
     return Object.entries(summary).map(([name, value]) => ({ name, value, percent: total > 0 ? (value / total) * 100 : 0 })).sort((a, b) => b.value - a.value);
   }, [transactions]);
 
+  // DADOS DE FATURA (Usa 'allTransactions' - Global)
   const stats = useMemo(() => {
-    // --- LÓGICA DO MÊS ATUAL (MANTIDA) ---
+    // Lógica para saber se uma transação antiga pertence à fatura atual
     const belongsToCurrentInvoice = (t: Transaction) => {
+      // 1. Etiqueta manual (Prioridade máxima)
       if (t.invoiceMonth) return t.invoiceMonth === currentInvoiceMonth;
-      if (!t.date) return false;
+
+      // 2. Cálculo automático
       const [y, m, d] = t.date.split('-').map(Number);
-      let tm = m, ty = y;
-      if (d > closingDay) { tm++; if(tm>12){tm=1;ty++} }
-      return `${ty}-${String(tm).padStart(2, '0')}` === currentInvoiceMonth;
+      let targetMonth = m;
+      let targetYear = y;
+      if (d > closingDay) {
+        targetMonth++;
+        if (targetMonth > 12) { targetMonth = 1; targetYear++; }
+      }
+      const calculatedInvoice = `${targetYear}-${String(targetMonth).padStart(2, '0')}`;
+      return calculatedInvoice === currentInvoiceMonth;
     };
 
     const receitas = transactions.filter(t => t.type === TransactionType.INCOME).reduce((acc, curr) => acc + curr.amount, 0);
     const immediateExpenses = transactions.filter(t => t.type === TransactionType.EXPENSE && t.paymentMethod !== PaymentMethod.CREDIT_CARD).reduce((acc, curr) => acc + curr.amount, 0);
     
-    // Fatura ATUAL (Calculada automaticamente com base nos lançamentos)
-    const faturaNovosGastos = (allTransactions || []).filter(t => t.type === TransactionType.EXPENSE && t.paymentMethod === PaymentMethod.CREDIT_CARD && belongsToCurrentInvoice(t)).reduce((acc, curr) => acc + curr.amount, 0);
+    // SOMA TUDO QUE É DA FATURA ATUAL (INCLUSIVE COMPRAS ANTIGAS)
+    const faturaNovosGastos = allTransactions
+      .filter(t => t.type === TransactionType.EXPENSE && t.paymentMethod === PaymentMethod.CREDIT_CARD && belongsToCurrentInvoice(t))
+      .reduce((acc, curr) => acc + curr.amount, 0);
+
     const pagamentosFatura = transactions.filter(t => t.category === PAYMENT_CATEGORY).reduce((acc, curr) => acc + curr.amount, 0);
     
-    const faturaAtualTotal = Math.max(0, (initialCreditBill + faturaNovosGastos) - pagamentosFatura);
+    const faturaTotal = Math.max(0, (initialCreditBill + faturaNovosGastos) - pagamentosFatura);
     
-    // Limite usado = (Fatura Atual Calculada + Próxima Manual)
-    const totalUsed = faturaAtualTotal + nextMonthInvoice;
-
-    // Lista de compras (Apenas da fatura atual)
-    const cardExpenses = (allTransactions || []).filter(t => t.type === TransactionType.EXPENSE && t.paymentMethod === PaymentMethod.CREDIT_CARD && belongsToCurrentInvoice(t)).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 3);
+    // Lista de compras para exibir (Fatura Atual)
+    const cardExpenses = allTransactions
+      .filter(t => t.type === TransactionType.EXPENSE && t.paymentMethod === PaymentMethod.CREDIT_CARD && belongsToCurrentInvoice(t))
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+      .slice(0, 3);
 
     return {
       saldo: initialBalance + receitas - immediateExpenses,
       receitas,
       despesasConta: immediateExpenses - pagamentosFatura,
       totalGeralGastos: (immediateExpenses - pagamentosFatura) + faturaNovosGastos,
-      fatura: faturaAtualTotal, // Automática
-      faturaProxima: nextMonthInvoice, // MANUAL
-      limiteTotal: totalCreditLimit || 1,
-      totalUsed,
+      fatura: faturaTotal, // Automático
+      faturaProxima: nextMonthInvoice, // Manual
+      limiteTotal: totalCreditLimit,
       cardExpenses
     };
   }, [transactions, allTransactions, initialBalance, initialCreditBill, totalCreditLimit, nextMonthInvoice, currentInvoiceMonth, closingDay]);
 
-  const progressPercentage = (stats.totalUsed / stats.limiteTotal) * 100;
+  const progressPercentage = (stats.fatura / stats.limiteTotal) * 100;
 
+  // CORREÇÃO DO GRÁFICO: Usa 'transactions' para filtrar categorias clicadas
   const categoryTransactions = useMemo(() => {
     if (!selectedCategory) return [];
-    return transactions.filter(t => t.category === selectedCategory && t.type === TransactionType.EXPENSE).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    return transactions
+      .filter(t => t.category === selectedCategory && t.type === TransactionType.EXPENSE)
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [selectedCategory, transactions]);
 
   const handleOpenModal = (type: TransactionType) => { setModalType(type); setIsModalOpen(true); };
-  const handleSave = (t: Partial<Transaction>) => { onAddTransaction({ ...t, id: Math.random().toString(36).substring(7), createdAt: Date.now() } as any); };
   
+  const handleSave = (t: Partial<Transaction>) => {
+    onAddTransaction({ ...t, id: Math.random().toString(), createdAt: Date.now() } as any);
+  };
+
   const handlePayBill = () => {
     const val = parseFloat(calibrationValue.replace(',', '.'));
     if (!val) return;
@@ -131,7 +150,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     if (isBalanceCalibrating) { const currentNetMovement = stats.saldo - initialBalance; onUpdateInitialBalance(val - currentNetMovement); }
     if (isCreditCalibrating) onUpdateInitialCreditBill(val);
     if (isLimitCalibrating) onUpdateTotalCreditLimit(val);
-    if (isNextInvoiceCalibrating) onUpdateNextMonthInvoice(val); // Salva o valor manual
+    if (isNextInvoiceCalibrating) onUpdateNextMonthInvoice(val); // Salva manual
     
     setCalibrationValue('');
     setIsBalanceCalibrating(false); setIsCreditCalibrating(false); setIsLimitCalibrating(false); setIsNextInvoiceCalibrating(false);
@@ -159,18 +178,18 @@ const Dashboard: React.FC<DashboardProps> = ({
         <button onClick={() => handleOpenModal(TransactionType.EXPENSE)} className="flex items-center gap-3 px-8 py-4 bg-[#f170c3] text-white rounded-full font-black text-sm shadow-lg shadow-[#f170c3]/20 hover:scale-105 active:scale-95 transition-all"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" /></svg> Nova Despesa</button>
       </div>
 
-      {/* --- AQUI ESTÁ O VISUAL DE FATURA DUPLA --- */}
+      {/* --- DOIS CARDS DE FATURA --- */}
       <div className="bg-white rounded-[2.5rem] p-8 lg:p-10 shadow-2xl shadow-[#521256]/10 border border-white/20">
         <div className="flex justify-between items-center mb-6">
            <h3 className="text-2xl font-black text-[#521256]">Gestão de Fatura ✨</h3>
            <div className="text-right">
              <span className="text-[10px] font-black opacity-40 uppercase tracking-widest block">Limite Disponível</span>
-             <button onClick={openLimitCalibration} className="text-xl font-black text-[#521256] hover:text-[#f170c3] transition-colors">R$ {(stats.limiteTotal - stats.totalUsed).toLocaleString('pt-BR')}</button>
+             <button onClick={openLimitCalibration} className="text-xl font-black text-[#521256] hover:text-[#f170c3] transition-colors">R$ {(stats.limiteTotal - stats.fatura).toLocaleString('pt-BR')}</button>
            </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-            {/* CARD ESQUERDA (AUTOMÁTICO) */}
+            {/* CARD ESQUERDA (Automático) */}
             <div className="bg-[#efd2fe]/20 p-6 rounded-[2rem] border border-[#efd2fe] relative overflow-hidden group">
                 <div className="absolute top-0 right-0 bg-[#f170c3] text-white text-[10px] font-black px-3 py-1 rounded-bl-xl uppercase">ATUAL</div>
                 <p className="text-[10px] font-black opacity-50 uppercase tracking-widest mb-1">Pagar Agora</p>
@@ -181,11 +200,8 @@ const Dashboard: React.FC<DashboardProps> = ({
                 </div>
             </div>
 
-            {/* CARD DIREITA (100% MANUAL - CLIQUE PARA EDITAR) */}
-            <div 
-                onClick={openNextInvoiceCalibration}
-                className="bg-white p-6 rounded-[2rem] border-2 border-dashed border-[#efd2fe] relative opacity-80 hover:opacity-100 transition-all cursor-pointer group hover:border-[#f170c3]"
-            >
+            {/* CARD DIREITA (Manual) */}
+            <div onClick={openNextInvoiceCalibration} className="bg-white p-6 rounded-[2rem] border-2 border-dashed border-[#efd2fe] relative opacity-80 hover:opacity-100 transition-all cursor-pointer group hover:border-[#f170c3]">
                 <div className="absolute top-0 right-0 bg-[#a3e635] text-[#1a2e05] text-[10px] font-black px-3 py-1 rounded-bl-xl uppercase">PRÓXIMA</div>
                 <p className="text-[10px] font-black opacity-40 uppercase tracking-widest mb-1">Previsão Manual</p>
                 <h2 className="text-3xl font-black text-[#521256]/60 mb-1 group-hover:text-[#f170c3] transition-colors">R$ {stats.faturaProxima.toLocaleString('pt-BR')}</h2>
@@ -220,7 +236,6 @@ const Dashboard: React.FC<DashboardProps> = ({
         </div>
       </div>
 
-      {/* Gráficos e Modais (IGUAIS) */}
       <div className="grid grid-cols-1 gap-8">
         <div className="bg-white/70 rounded-[2.5rem] p-10 shadow-xl shadow-[#521256]/5 border border-white/40">
           <h3 className="text-xl font-black text-[#521256] mb-8 flex items-center justify-between">Análise por Categoria <span>🔎</span></h3>
@@ -251,7 +266,26 @@ const Dashboard: React.FC<DashboardProps> = ({
       </div>
 
       <TransactionModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onSave={handleSave} type={modalType} availableCategories={categories} onAddCategory={onAddCategory} onOpenCategoryManager={onOpenCategoryManager} closingDay={closingDay} />
-      {selectedCategory && ( <div className="fixed inset-0 bg-[#521256]/60 backdrop-blur-md z-[150] flex items-center justify-center p-4"><div className="bg-white p-8 rounded-2xl"><button onClick={() => setSelectedCategory(null)}>Fechar</button></div></div> )}
+      
+      {/* RESTAURAÇÃO DO MODAL DE DETALHES DE CATEGORIA (ESTAVA FALTANDO!) */}
+      {selectedCategory && (
+        <div className="fixed inset-0 bg-[#521256]/60 backdrop-blur-md z-[150] flex items-center justify-center p-4 animate-in fade-in duration-200">
+            <div className="bg-white rounded-[2.5rem] w-full max-w-md p-8 shadow-2xl animate-in zoom-in duration-300 max-h-[80vh] flex flex-col">
+                <div className="flex justify-between items-center mb-6">
+                    <div><p className="text-[10px] font-black opacity-40 uppercase tracking-widest">Detalhes da Categoria</p><h3 className="text-2xl font-black text-[#521256]">{selectedCategory}</h3></div>
+                    <button onClick={() => setSelectedCategory(null)} className="p-2 hover:bg-gray-100 rounded-full transition-colors"><svg className="w-6 h-6 text-[#521256]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg></button>
+                </div>
+                <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-3">
+                    {categoryTransactions.map(t => (
+                        <div key={t.id} className="flex justify-between items-center p-4 bg-[#efd2fe]/20 rounded-2xl border border-transparent hover:border-[#f170c3]/30 transition-colors">
+                            <div><p className="font-bold text-[#521256] text-sm">{t.description}</p><p className="text-[10px] opacity-50 font-bold uppercase">{new Date(t.date + 'T12:00:00').toLocaleDateString('pt-BR')}</p></div>
+                            <span className="font-black text-red-500 text-sm">- R$ {t.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        </div>
+      )}
 
       {(isBalanceCalibrating || isCreditCalibrating || isLimitCalibrating || isPayingBill || isNextInvoiceCalibrating) && (
         <div className="fixed inset-0 bg-[#521256]/60 backdrop-blur-md z-[150] flex items-center justify-center p-4 animate-in fade-in duration-200">
