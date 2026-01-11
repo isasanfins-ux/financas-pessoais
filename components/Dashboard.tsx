@@ -23,7 +23,7 @@ interface DashboardProps {
 
 const Dashboard: React.FC<DashboardProps> = ({ 
   transactions = [], 
-  allTransactions = [], // Proteção contra undefined
+  allTransactions = [], 
   currentDate,
   onAddTransaction, 
   categories = [],
@@ -49,13 +49,14 @@ const Dashboard: React.FC<DashboardProps> = ({
 
   const PAYMENT_CATEGORY = "Pagamento de Fatura";
   
-  // Garante datas válidas
+  // Proteção contra data inválida
   const safeDate = currentDate || new Date();
-  const currentInvoiceMonth = safeDate.toISOString().slice(0, 7); // 'YYYY-MM'
+  const currentInvoiceMonth = safeDate.toISOString().slice(0, 7); // Ex: '2026-01'
   
+  // Calcula o mês seguinte para o card da direita
   const nextDate = new Date(safeDate);
   nextDate.setMonth(nextDate.getMonth() + 1);
-  const nextInvoiceMonth = nextDate.toISOString().slice(0, 7); // 'YYYY-MM'
+  const nextInvoiceMonth = nextDate.toISOString().slice(0, 7); // Ex: '2026-02'
 
   const categoryData = useMemo(() => {
     if (!transactions) return [];
@@ -84,16 +85,17 @@ const Dashboard: React.FC<DashboardProps> = ({
     const safeAll = allTransactions || [];
     const safeMonthly = transactions || [];
 
-    // --- CÁLCULO SEGURO DA FATURA ---
+    // Função auxiliar para calcular o total de qualquer fatura
     const getInvoiceTotal = (targetMonth: string) => {
       return safeAll
         .filter(t => {
+          // Filtros básicos
           if (!t || t.type !== TransactionType.EXPENSE || t.paymentMethod !== PaymentMethod.CREDIT_CARD) return false;
           
-          // 1. Prioridade: Etiqueta Manual
+          // 1. Etiqueta manual (Prioridade)
           if (t.invoiceMonth) return t.invoiceMonth === targetMonth;
 
-          // 2. Cálculo Automático (com proteção de data)
+          // 2. Cálculo automático seguro
           if (!t.date) return false;
           try {
             const [y, m, d] = t.date.split('-').map(Number);
@@ -112,10 +114,10 @@ const Dashboard: React.FC<DashboardProps> = ({
         .reduce((acc, curr) => acc + curr.amount, 0);
     };
 
+    // Calcula as duas faturas
     const currentInvoiceTotal = getInvoiceTotal(currentInvoiceMonth);
     const nextInvoiceTotal = getInvoiceTotal(nextInvoiceMonth);
 
-    // Cálculos gerais baseados no mês visualizado
     const receitas = safeMonthly
       .filter(t => t.type === TransactionType.INCOME)
       .reduce((acc, curr) => acc + curr.amount, 0);
@@ -128,13 +130,13 @@ const Dashboard: React.FC<DashboardProps> = ({
       .filter(t => t.category === PAYMENT_CATEGORY)
       .reduce((acc, curr) => acc + curr.amount, 0);
 
-    // Fatura Atual = (Saldo Inicial Fatura + Gastos da Fatura Atual - O que já paguei)
+    // Fatura Atual Líquida
     const faturaAtualLiquida = Math.max(0, (initialCreditBill + currentInvoiceTotal) - pagamentosFatura);
 
-    // Total usado no limite (Estimativa Global)
+    // Total de crédito usado (Atual + Próxima + Saldo Devedor Anterior)
     const totalCreditUsed = (initialCreditBill + currentInvoiceTotal + nextInvoiceTotal) - pagamentosFatura;
-
-    // Lista de ultimas compras da fatura atual
+    
+    // Lista apenas da fatura atual para exibir
     const cardExpensesCurrent = safeAll
       .filter(t => 
         t.type === TransactionType.EXPENSE && 
@@ -158,7 +160,7 @@ const Dashboard: React.FC<DashboardProps> = ({
       despesasConta,
       totalGeralGastos: immediateExpenses + currentInvoiceTotal,
       faturaAtual: faturaAtualLiquida,
-      faturaProxima: nextInvoiceTotal,
+      faturaProxima: nextInvoiceTotal, // <--- Valor da próxima fatura
       limiteTotal: totalCreditLimit,
       totalCreditUsed,
       cardExpenses: cardExpensesCurrent
@@ -252,7 +254,7 @@ const Dashboard: React.FC<DashboardProps> = ({
         <StatCard title="Saldo Disponível" value={stats.saldo} bgColor={COLORS.BASE} onClick={openBalanceCalibration} />
         <StatCard title="Receitas do Mês 🤩" value={stats.receitas} bgColor="#e2e585" textColor="#521256" />
         <StatCard title="Saídas (Débito) 🔻" value={stats.despesasConta} color="#ef4444" />
-        <StatCard title="Total no Cartão 💳" value={stats.faturaAtual} onClick={openCreditCalibration} />
+        <StatCard title={`Fatura ${safeDate.toLocaleDateString('pt-BR', {month: 'long'})} 💳`} value={stats.faturaAtual} onClick={openCreditCalibration} />
         <StatCard title="Despesas Totais 💰" value={stats.totalGeralGastos} color="#ef4444" />
       </div>
 
@@ -266,7 +268,7 @@ const Dashboard: React.FC<DashboardProps> = ({
         </button>
       </div>
 
-      {/* --- AQUI ESTÁ A NOVIDADE: CARDS DE FATURA DIVIDIDOS --- */}
+      {/* --- AQUI ESTÁ A DIVISÃO DOS CARDS DE FATURA --- */}
       <div className="bg-white rounded-[2.5rem] p-8 lg:p-10 shadow-2xl shadow-[#521256]/10 border border-white/20">
         
         <div className="flex justify-between items-center mb-6">
@@ -282,8 +284,8 @@ const Dashboard: React.FC<DashboardProps> = ({
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
             {/* Card ESQUERDA: Fatura Atual */}
             <div className="bg-[#efd2fe]/20 p-6 rounded-[2rem] border border-[#efd2fe] relative overflow-hidden group">
-                <div className="absolute top-0 right-0 bg-[#f170c3] text-white text-[10px] font-black px-3 py-1 rounded-bl-xl">ATUAL</div>
-                <p className="text-[10px] font-black opacity-50 uppercase tracking-widest mb-1">Vence em {safeDate.toLocaleDateString('pt-BR', {month: 'long'}).toUpperCase()}</p>
+                <div className="absolute top-0 right-0 bg-[#f170c3] text-white text-[10px] font-black px-3 py-1 rounded-bl-xl uppercase">ATUAL ({safeDate.toLocaleDateString('pt-BR', {month: 'short'})})</div>
+                <p className="text-[10px] font-black opacity-50 uppercase tracking-widest mb-1">Pagar Agora</p>
                 <h2 className="text-3xl font-black text-[#521256] mb-4">R$ {stats.faturaAtual.toLocaleString('pt-BR')}</h2>
                 <div className="flex items-center gap-2">
                    <button onClick={() => setIsPayingBill(true)} className="flex-1 bg-[#521256] text-white py-3 rounded-xl font-black text-xs hover:scale-[1.02] active:scale-95 transition-all shadow-lg">
@@ -297,10 +299,10 @@ const Dashboard: React.FC<DashboardProps> = ({
 
             {/* Card DIREITA: Fatura Próxima */}
             <div className="bg-white p-6 rounded-[2rem] border-2 border-dashed border-[#efd2fe] relative opacity-80 hover:opacity-100 transition-opacity">
-                <div className="absolute top-0 right-0 bg-[#a3e635] text-[#1a2e05] text-[10px] font-black px-3 py-1 rounded-bl-xl">PRÓXIMA</div>
-                <p className="text-[10px] font-black opacity-40 uppercase tracking-widest mb-1">Vence em {nextDate.toLocaleDateString('pt-BR', {month: 'long'}).toUpperCase()}</p>
+                <div className="absolute top-0 right-0 bg-[#a3e635] text-[#1a2e05] text-[10px] font-black px-3 py-1 rounded-bl-xl uppercase">PRÓXIMA ({nextDate.toLocaleDateString('pt-BR', {month: 'short'})})</div>
+                <p className="text-[10px] font-black opacity-40 uppercase tracking-widest mb-1">Acumulado</p>
                 <h2 className="text-3xl font-black text-[#521256]/60 mb-1">R$ {stats.faturaProxima.toLocaleString('pt-BR')}</h2>
-                <p className="text-[10px] font-bold text-[#f170c3]">Acumulado até agora</p>
+                <p className="text-[10px] font-bold text-[#f170c3]">Vence no próximo mês</p>
             </div>
         </div>
 
@@ -315,21 +317,21 @@ const Dashboard: React.FC<DashboardProps> = ({
         </div>
 
         <div>
-          <h4 className="text-[10px] font-black text-[#521256] opacity-40 uppercase tracking-widest mb-4">Últimas desta Fatura</h4>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <h4 className="text-xs font-black text-[#521256] opacity-40 uppercase tracking-widest mb-4">Últimas desta Fatura</h4>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {stats.cardExpenses.map((t) => (
-              <div key={t.id} className="bg-[#efd2fe]/30 p-4 rounded-2xl border border-white/50 flex items-center justify-between hover:bg-white transition-colors cursor-pointer group">
+              <div key={t.id} className="bg-[#efd2fe]/30 p-5 rounded-2xl border border-white/50 flex items-center justify-between hover:bg-white transition-colors cursor-pointer group">
                 <div className="flex items-center gap-3">
-                   <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center text-lg shadow-sm">💳</div>
-                   <div className="overflow-hidden">
-                     <p className="text-xs font-black text-[#521256] truncate">{t.description}</p>
-                     <p className="text-[9px] font-bold opacity-50">{new Date(t.date).toLocaleDateString('pt-BR')}</p>
+                   <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center text-xl shadow-sm">💳</div>
+                   <div>
+                     <p className="text-sm font-black text-[#521256] line-clamp-1">{t.description}</p>
+                     <p className="text-xs font-bold opacity-50">{new Date(t.date).toLocaleDateString('pt-BR')}</p>
                    </div>
                 </div>
-                <span className="text-xs font-black text-[#521256] group-hover:text-[#f170c3]">R$ {t.amount.toLocaleString('pt-BR')}</span>
+                <span className="text-sm font-black text-[#521256] group-hover:text-[#f170c3]">R$ {t.amount.toLocaleString('pt-BR')}</span>
               </div>
             ))}
-            {stats.cardExpenses.length === 0 && (<p className="col-span-3 text-center py-2 text-xs font-bold opacity-30 italic">Nenhum gasto nesta fatura ainda.</p>)}
+            {stats.cardExpenses.length === 0 && (<p className="col-span-3 text-center py-4 text-xs font-bold opacity-30 italic">Nenhum gasto nesta fatura ainda.</p>)}
           </div>
         </div>
       </div>
