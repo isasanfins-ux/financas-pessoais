@@ -18,7 +18,7 @@ interface DashboardProps {
   onUpdateInitialBalance: (val: number) => void;
   onUpdateInitialCreditBill: (val: number) => void;
   onUpdateTotalCreditLimit: (val: number) => void;
-  closingDay: number; 
+  closingDay?: number; 
 }
 
 const Dashboard: React.FC<DashboardProps> = ({ 
@@ -35,7 +35,7 @@ const Dashboard: React.FC<DashboardProps> = ({
   onUpdateInitialBalance,
   onUpdateInitialCreditBill,
   onUpdateTotalCreditLimit,
-  closingDay
+  closingDay = 6 
 }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalType, setModalType] = useState<TransactionType>(TransactionType.EXPENSE);
@@ -48,8 +48,6 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [calibrationValue, setCalibrationValue] = useState('');
 
   const PAYMENT_CATEGORY = "Pagamento de Fatura";
-  
-  // Mês atual da fatura que estamos vendo (Ex: '2026-01')
   const currentInvoiceMonth = currentDate.toISOString().slice(0, 7);
 
   const categoryData = useMemo(() => {
@@ -75,24 +73,21 @@ const Dashboard: React.FC<DashboardProps> = ({
   }, [transactions]);
 
   const stats = useMemo(() => {
-    // Helper para verificar se a transação pertence à fatura atual
+    // --- LÓGICA DE FATURA HÍBRIDA (MANUAL + AUTOMÁTICA) ---
     const belongsToCurrentInvoice = (t: Transaction) => {
-      // 1. Se tiver a etiqueta nova manual, usa ela (Prioridade Total)
       if (t.invoiceMonth) {
         return t.invoiceMonth === currentInvoiceMonth;
       }
-
-      // 2. Se for antiga (sem etiqueta), usa a lógica automática do dia de fechamento
-      const tDate = new Date(t.date + 'T12:00:00');
-      const day = tDate.getDate();
-      
-      // Se comprou DEPOIS do fechamento, joga pro mês seguinte
-      if (day > closingDay) {
-        tDate.setMonth(tDate.getMonth() + 1);
+      // Fallback matemático
+      const [y, m, d] = t.date.split('-').map(Number);
+      let targetMonth = m;
+      let targetYear = y;
+      if (d > closingDay) {
+        targetMonth++;
+        if (targetMonth > 12) { targetMonth = 1; targetYear++; }
       }
-      
-      const calculatedMonth = tDate.toISOString().slice(0, 7);
-      return calculatedMonth === currentInvoiceMonth;
+      const calculatedInvoice = `${targetYear}-${String(targetMonth).padStart(2, '0')}`;
+      return calculatedInvoice === currentInvoiceMonth;
     };
 
     const receitas = transactions
@@ -103,12 +98,11 @@ const Dashboard: React.FC<DashboardProps> = ({
       .filter(t => t.type === TransactionType.EXPENSE && t.paymentMethod !== PaymentMethod.CREDIT_CARD)
       .reduce((acc, curr) => acc + curr.amount, 0);
 
-    // --- CORREÇÃO AQUI: USA A FUNÇÃO HÍBRIDA ---
     const faturaNovosGastos = allTransactions
       .filter(t => 
         t.type === TransactionType.EXPENSE && 
         t.paymentMethod === PaymentMethod.CREDIT_CARD &&
-        belongsToCurrentInvoice(t) // <--- Agora verifica etiquetas E datas antigas
+        belongsToCurrentInvoice(t)
       )
       .reduce((acc, curr) => acc + curr.amount, 0);
 
@@ -124,7 +118,7 @@ const Dashboard: React.FC<DashboardProps> = ({
       .filter(t => 
         t.type === TransactionType.EXPENSE && 
         t.paymentMethod === PaymentMethod.CREDIT_CARD &&
-        belongsToCurrentInvoice(t) // <--- Aqui também
+        belongsToCurrentInvoice(t)
       )
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
       .slice(0, 3);
@@ -174,10 +168,8 @@ const Dashboard: React.FC<DashboardProps> = ({
   const handlePayBill = () => {
     const val = parseFloat(calibrationValue.replace(',', '.'));
     if (!val) return;
-
     const now = new Date();
     const localDate = now.toLocaleDateString('pt-BR').split('/').reverse().join('-');
-
     const paymentTransaction: Transaction = {
       id: Math.random().toString(36).substring(7),
       description: 'Pagamento de Fatura 💳',
@@ -189,22 +181,34 @@ const Dashboard: React.FC<DashboardProps> = ({
       date: localDate, 
       createdAt: Date.now() 
     } as any;
-
     onAddTransaction(paymentTransaction);
     setCalibrationValue('');
     setIsPayingBill(false);
     alert("Pagamento registrado! Ele aparecerá no seu Extrato. ✨");
   };
 
-  const openBalanceCalibration = () => { setCalibrationValue(initialBalance.toString()); setIsBalanceCalibrating(true); };
-  const openCreditCalibration = () => { setCalibrationValue(initialCreditBill.toString()); setIsCreditCalibrating(true); };
+  const openBalanceCalibration = () => { setCalibrationValue(stats.saldo.toFixed(2)); setIsBalanceCalibrating(true); };
+  const openCreditCalibration = () => { setCalibrationValue(stats.fatura.toFixed(2)); setIsCreditCalibrating(true); };
   const openLimitCalibration = () => { setCalibrationValue(totalCreditLimit.toString()); setIsLimitCalibrating(true); };
 
+  // --- A MÁGICA DA CALIBRAÇÃO INTELIGENTE ✨ ---
   const saveCalibration = () => {
     const val = parseFloat(calibrationValue.replace(',', '.')) || 0;
-    if (isBalanceCalibrating) onUpdateInitialBalance(val);
-    if (isCreditCalibrating) onUpdateInitialCreditBill(val);
+
+    if (isBalanceCalibrating) {
+      // Calcula o "movimento líquido" do mês (tudo que entrou menos tudo que saiu)
+      const currentNetMovement = stats.saldo - initialBalance;
+      // Define o novo saldo inicial para que o resultado final seja exatamente o que você digitou
+      const newInitial = val - currentNetMovement;
+      onUpdateInitialBalance(newInitial);
+    }
+    
+    if (isCreditCalibrating) {
+       onUpdateInitialCreditBill(val);
+    }
+
     if (isLimitCalibrating) onUpdateTotalCreditLimit(val);
+
     setCalibrationValue('');
     setIsBalanceCalibrating(false);
     setIsCreditCalibrating(false);
@@ -234,57 +238,18 @@ const Dashboard: React.FC<DashboardProps> = ({
   return (
     <div className="space-y-8 animate-in fade-in duration-700 pb-10">
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
-        
-        {/* 1. Saldo Disponível */}
-        <StatCard 
-          title="Saldo Disponível" 
-          value={stats.saldo} 
-          bgColor={COLORS.BASE} 
-          onClick={openBalanceCalibration} 
-        />
-
-        {/* 2. Receitas do Mês - Fundo Verde */}
-        <StatCard 
-          title="Receitas do Mês 🤩" 
-          value={stats.receitas} 
-          bgColor="#e2e585" 
-          textColor="#521256" 
-        />
-
-        {/* 3. Saídas (Débito) - Vermelho */}
-        <StatCard 
-          title="Saídas (Débito) 🔻" 
-          value={stats.despesasConta} 
-          color="#ef4444" 
-        />
-
-        {/* 4. Fatura Atual - Emoji Cartão */}
-        <StatCard 
-          title={`Fatura ${currentDate.toLocaleDateString('pt-BR', {month: 'long'})} 💳`}
-          value={stats.fatura} 
-          onClick={openCreditCalibration} 
-        />
-        
-        {/* 5. Despesas Totais - Vermelho + Emoji */}
-        <StatCard 
-          title="Despesas Totais 💰" 
-          value={stats.totalGeralGastos} 
-          color="#ef4444" 
-        />
-
+        <StatCard title="Saldo Disponível" value={stats.saldo} bgColor={COLORS.BASE} onClick={openBalanceCalibration} />
+        <StatCard title="Receitas do Mês 🤩" value={stats.receitas} bgColor="#e2e585" textColor="#521256" />
+        <StatCard title="Saídas (Débito) 🔻" value={stats.despesasConta} color="#ef4444" />
+        <StatCard title={`Fatura ${currentDate.toLocaleDateString('pt-BR', {month: 'long'})} 💳`} value={stats.fatura} onClick={openCreditCalibration} />
+        <StatCard title="Despesas Totais 💰" value={stats.totalGeralGastos} color="#ef4444" />
       </div>
 
       <div className="flex flex-wrap gap-4 items-center">
-        <button 
-          onClick={() => handleOpenModal(TransactionType.INCOME)}
-          className="flex items-center gap-3 px-8 py-4 bg-[#e2e585] text-[#521256] rounded-full font-black text-sm shadow-lg shadow-[#e2e585]/20 hover:scale-105 active:scale-95 transition-all"
-        >
+        <button onClick={() => handleOpenModal(TransactionType.INCOME)} className="flex items-center gap-3 px-8 py-4 bg-[#e2e585] text-[#521256] rounded-full font-black text-sm shadow-lg shadow-[#e2e585]/20 hover:scale-105 active:scale-95 transition-all">
           <span className="text-xl">+</span> Nova Receita
         </button>
-        <button 
-          onClick={() => handleOpenModal(TransactionType.EXPENSE)}
-          className="flex items-center gap-3 px-8 py-4 bg-[#f170c3] text-white rounded-full font-black text-sm shadow-lg shadow-[#f170c3]/20 hover:scale-105 active:scale-95 transition-all"
-        >
+        <button onClick={() => handleOpenModal(TransactionType.EXPENSE)} className="flex items-center gap-3 px-8 py-4 bg-[#f170c3] text-white rounded-full font-black text-sm shadow-lg shadow-[#f170c3]/20 hover:scale-105 active:scale-95 transition-all">
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" /></svg>
           Nova Despesa
         </button>
@@ -294,9 +259,7 @@ const Dashboard: React.FC<DashboardProps> = ({
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-8">
           <div className="flex-1">
             <h3 className="text-2xl font-black text-[#521256] mb-1">Gestão de Fatura ✨</h3>
-            <p className="text-sm font-semibold opacity-60">
-                Visualizando fatura de <span className="text-[#f170c3] uppercase font-bold">{currentDate.toLocaleDateString('pt-BR', {month: 'long', year: 'numeric'})}</span>
-            </p>
+            <p className="text-sm font-semibold opacity-60">Visualizando fatura de <span className="text-[#f170c3] uppercase font-bold">{currentDate.toLocaleDateString('pt-BR', {month: 'long', year: 'numeric'})}</span></p>
           </div>
           <div className="text-right">
             <span className="text-xs font-black opacity-40 uppercase tracking-tighter">Limite Disponível</span>
@@ -308,27 +271,15 @@ const Dashboard: React.FC<DashboardProps> = ({
           <div className="flex justify-between items-end mb-3">
             <span className="text-xs font-black text-[#f170c3] uppercase">Limite Utilizado ({progressPercentage.toFixed(0)}%)</span>
             <div className="flex gap-4 items-center">
-              <button 
-                onClick={() => setIsPayingBill(true)}
-                className="text-[10px] bg-[#521256] text-white px-3 py-1.5 rounded-full font-black hover:scale-105 transition-all shadow-md"
-              >
-                PAGAR FATURA
-              </button>
-
-              <button 
-                onClick={openLimitCalibration}
-                className="flex items-center gap-1 text-xs font-bold text-[#521256]/40 hover:text-[#521256] transition-colors group"
-              >
+              <button onClick={() => setIsPayingBill(true)} className="text-[10px] bg-[#521256] text-white px-3 py-1.5 rounded-full font-black hover:scale-105 transition-all shadow-md">PAGAR FATURA</button>
+              <button onClick={openLimitCalibration} className="flex items-center gap-1 text-xs font-bold text-[#521256]/40 hover:text-[#521256] transition-colors group">
                 R$ {stats.limiteTotal.toLocaleString('pt-BR')} total
                 <svg className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" fill="currentColor" viewBox="0 0 20 20"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" /></svg>
               </button>
             </div>
           </div>
           <div className="w-full h-6 bg-[#efd2fe]/40 rounded-full overflow-hidden p-1 shadow-inner border border-[#efd2fe]">
-            <div 
-              className="h-full bg-gradient-to-r from-[#f170c3] to-[#521256] rounded-full transition-all duration-1000 ease-out shadow-lg"
-              style={{ width: `${Math.min(progressPercentage, 100)}%` }}
-            ></div>
+            <div className="h-full bg-gradient-to-r from-[#f170c3] to-[#521256] rounded-full transition-all duration-1000 ease-out shadow-lg" style={{ width: `${Math.min(progressPercentage, 100)}%` }}></div>
           </div>
         </div>
 
@@ -347,116 +298,61 @@ const Dashboard: React.FC<DashboardProps> = ({
                 <span className="text-sm font-black text-[#521256] group-hover:text-[#f170c3]">R$ {t.amount.toLocaleString('pt-BR')}</span>
               </div>
             ))}
-            {stats.cardExpenses.length === 0 && (
-              <p className="col-span-3 text-center py-4 text-xs font-bold opacity-30 italic">Nenhum gasto nesta fatura ainda.</p>
-            )}
+            {stats.cardExpenses.length === 0 && (<p className="col-span-3 text-center py-4 text-xs font-bold opacity-30 italic">Nenhum gasto nesta fatura ainda.</p>)}
           </div>
         </div>
       </div>
 
       <div className="grid grid-cols-1 gap-8">
         <div className="bg-white/70 rounded-[2.5rem] p-10 shadow-xl shadow-[#521256]/5 border border-white/40">
-          <h3 className="text-xl font-black text-[#521256] mb-8 flex items-center justify-between">
-            Análise por Categoria (Data da Compra) <span>🔎</span>
-          </h3>
-          
+          <h3 className="text-xl font-black text-[#521256] mb-8 flex items-center justify-between">Análise por Categoria (Data da Compra) <span>🔎</span></h3>
           <div className="flex flex-col lg:flex-row items-center gap-8 lg:gap-12">
             <div className="h-[300px] w-full lg:w-1/2">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
-                  <Pie
-                    data={categoryData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={70}
-                    outerRadius={110}
-                    paddingAngle={5}
-                    dataKey="value"
-                    stroke="none"
-                  >
-                    {categoryData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
-                    ))}
+                  <Pie data={categoryData} cx="50%" cy="50%" innerRadius={70} outerRadius={110} paddingAngle={5} dataKey="value" stroke="none">
+                    {categoryData.map((entry, index) => (<Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />))}
                   </Pie>
-                  <Tooltip 
-                    contentStyle={{ borderRadius: '1.2rem', border: 'none', boxShadow: '0 10px 25px rgba(0,0,0,0.05)', padding: '0.8rem' }}
-                    formatter={(value: number, name: string) => [`R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, name]}
-                  />
+                  <Tooltip contentStyle={{ borderRadius: '1.2rem', border: 'none', boxShadow: '0 10px 25px rgba(0,0,0,0.05)', padding: '0.8rem' }} formatter={(value: number, name: string) => [`R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, name]} />
                 </PieChart>
               </ResponsiveContainer>
             </div>
-
             <div className="w-full lg:w-1/2 space-y-3 lg:max-h-[300px] lg:overflow-y-auto pr-2 custom-scrollbar">
               {categoryData.map((entry, index) => (
-                <div 
-                  key={index} 
-                  onClick={() => setSelectedCategory(entry.name)} 
-                  className="flex items-center justify-between p-3 rounded-2xl hover:bg-white transition-colors cursor-pointer group border border-transparent hover:border-[#f170c3]/20 hover:shadow-md"
-                >
+                <div key={index} onClick={() => setSelectedCategory(entry.name)} className="flex items-center justify-between p-3 rounded-2xl hover:bg-white transition-colors cursor-pointer group border border-transparent hover:border-[#f170c3]/20 hover:shadow-md">
                   <div className="flex items-center gap-3">
-                    <div 
-                      className="w-4 h-4 rounded-full shadow-sm" 
-                      style={{ backgroundColor: CHART_COLORS[index % CHART_COLORS.length] }}
-                    ></div>
+                    <div className="w-4 h-4 rounded-full shadow-sm" style={{ backgroundColor: CHART_COLORS[index % CHART_COLORS.length] }}></div>
                     <div>
                       <p className="text-xs font-black text-[#521256] group-hover:text-[#f170c3] transition-colors">{entry.name}</p>
                       <p className="text-[10px] font-bold opacity-40">{entry.percent.toFixed(1)}%</p>
                     </div>
                   </div>
                   <div className="text-right">
-                    <span className="text-sm font-black text-[#521256]">
-                        R$ {entry.value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                    </span>
+                    <span className="text-sm font-black text-[#521256]">R$ {entry.value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
                     <p className="text-[9px] font-bold text-[#f170c3] opacity-0 group-hover:opacity-100 transition-opacity">Ver detalhes</p>
                   </div>
                 </div>
               ))}
-              
-              {categoryData.length === 0 && (
-                <div className="text-center py-4 w-full">
-                  <p className="text-xs opacity-40 italic">Nenhum dado para exibir.</p>
-                </div>
-              )}
+              {categoryData.length === 0 && (<div className="text-center py-4 w-full"><p className="text-xs opacity-40 italic">Nenhum dado para exibir.</p></div>)}
             </div>
           </div>
         </div>
       </div>
 
-      <TransactionModal 
-        isOpen={isModalOpen} 
-        onClose={() => setIsModalOpen(false)} 
-        onSave={handleSave} 
-        type={modalType} 
-        availableCategories={categories}
-        onAddCategory={onAddCategory}
-        onOpenCategoryManager={onOpenCategoryManager}
-        closingDay={closingDay} // <--- Passando o dia de fechamento
-      />
+      <TransactionModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onSave={handleSave} type={modalType} availableCategories={categories} onAddCategory={onAddCategory} onOpenCategoryManager={onOpenCategoryManager} closingDay={closingDay} />
 
-      {/* ... MANTIVE O RESTO DO MODAL DE DETALHES E CALIBRAÇÃO IGUAL ... */}
       {selectedCategory && (
         <div className="fixed inset-0 bg-[#521256]/60 backdrop-blur-md z-[150] flex items-center justify-center p-4 animate-in fade-in duration-200">
             <div className="bg-white rounded-[2.5rem] w-full max-w-md p-8 shadow-2xl animate-in zoom-in duration-300 max-h-[80vh] flex flex-col">
                 <div className="flex justify-between items-center mb-6">
-                    <div>
-                        <p className="text-[10px] font-black opacity-40 uppercase tracking-widest">Detalhes da Categoria</p>
-                        <h3 className="text-2xl font-black text-[#521256]">{selectedCategory}</h3>
-                    </div>
-                    <button onClick={() => setSelectedCategory(null)} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
-                        <svg className="w-6 h-6 text-[#521256]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
-                    </button>
+                    <div><p className="text-[10px] font-black opacity-40 uppercase tracking-widest">Detalhes da Categoria</p><h3 className="text-2xl font-black text-[#521256]">{selectedCategory}</h3></div>
+                    <button onClick={() => setSelectedCategory(null)} className="p-2 hover:bg-gray-100 rounded-full transition-colors"><svg className="w-6 h-6 text-[#521256]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg></button>
                 </div>
-                
                 <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-3">
                     {categoryTransactions.map(t => (
                         <div key={t.id} className="flex justify-between items-center p-4 bg-[#efd2fe]/20 rounded-2xl border border-transparent hover:border-[#f170c3]/30 transition-colors">
-                            <div>
-                                <p className="font-bold text-[#521256] text-sm">{t.description}</p>
-                                <p className="text-[10px] opacity-50 font-bold uppercase">{new Date(t.date + 'T12:00:00').toLocaleDateString('pt-BR')}</p>
-                            </div>
-                            <span className="font-black text-red-500 text-sm">
-                                - R$ {t.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                            </span>
+                            <div><p className="font-bold text-[#521256] text-sm">{t.description}</p><p className="text-[10px] opacity-50 font-bold uppercase">{new Date(t.date + 'T12:00:00').toLocaleDateString('pt-BR')}</p></div>
+                            <span className="font-black text-red-500 text-sm">- R$ {t.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
                         </div>
                     ))}
                 </div>
@@ -464,4 +360,30 @@ const Dashboard: React.FC<DashboardProps> = ({
         </div>
       )}
 
-      {(isBalanceCal
+      {(isBalanceCalibrating || isCreditCalibrating || isLimitCalibrating || isPayingBill) && (
+        <div className="fixed inset-0 bg-[#521256]/60 backdrop-blur-md z-[150] flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-[2.5rem] w-full max-w-sm p-10 shadow-2xl animate-in zoom-in duration-300">
+            <h3 className="text-xl font-black text-[#521256] mb-2 text-center">
+              {isPayingBill ? 'Pagar Fatura 💳' : (isLimitCalibrating ? 'Definir Limite' : 'Calibrar ' + (isBalanceCalibrating ? 'Saldo' : 'Fatura')) + ' ✨'}
+            </h3>
+             <p className="text-xs font-bold text-[#521256]/40 mb-8 text-center uppercase tracking-widest">
+              {isPayingBill ? 'Quanto você vai pagar/antecipar?' : (isLimitCalibrating ? 'Qual é o limite somado dos cartões?' : (isBalanceCalibrating ? 'Saldo real atual?' : 'Gasto atual na fatura?'))}
+            </p>
+            <div className="mb-8">
+              <label className="text-[10px] font-black text-[#521256]/50 uppercase tracking-[0.2em] mb-2 block">Valor em R$</label>
+              <input autoFocus type="number" value={calibrationValue} onChange={(e) => setCalibrationValue(e.target.value)} placeholder="0,00" className="w-full px-6 py-5 bg-[#efd2fe]/30 rounded-2xl focus:outline-none focus:ring-2 focus:ring-[#f170c3] text-[#521256] font-black text-3xl text-center" />
+            </div>
+            <div className="flex flex-col gap-3">
+              <button onClick={isPayingBill ? handlePayBill : saveCalibration} className="w-full py-5 bg-[#521256] text-white font-black rounded-2xl shadow-xl hover:scale-[1.02] active:scale-95 transition-all">
+                {isPayingBill ? 'CONFIRMAR PAGAMENTO' : 'SALVAR AJUSTE'}
+              </button>
+              <button onClick={() => { setIsBalanceCalibrating(false); setIsCreditCalibrating(false); setIsLimitCalibrating(false); setIsPayingBill(false); }} className="w-full py-4 text-[#521256] font-black hover:bg-[#efd2fe]/50 rounded-2xl transition-colors text-sm">CANCELAR</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default Dashboard;
