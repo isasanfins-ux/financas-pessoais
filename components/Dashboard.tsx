@@ -5,9 +5,9 @@ import { CHART_COLORS, COLORS } from '../constants';
 import TransactionModal from './TransactionModal';
 
 interface DashboardProps {
-  transactions: Transaction[]; 
-  allTransactions: Transaction[]; 
-  currentDate: Date; 
+  transactions: Transaction[];
+  allTransactions: Transaction[];
+  currentDate: Date;
   onAddTransaction: (t: Transaction) => void;
   categories?: string[];
   onAddCategory?: (name: string) => void;
@@ -18,20 +18,20 @@ interface DashboardProps {
   onUpdateInitialBalance: (val: number) => void;
   onUpdateInitialCreditBill: (val: number) => void;
   onUpdateTotalCreditLimit: (val: number) => void;
-  closingDay?: number; 
+  closingDay?: number;
 }
 
 const Dashboard: React.FC<DashboardProps> = ({ 
-  transactions, 
-  allTransactions,
+  transactions = [], 
+  allTransactions = [], // Proteção contra undefined
   currentDate,
   onAddTransaction, 
   categories = [],
   onAddCategory,
   onOpenCategoryManager,
-  initialBalance,
-  initialCreditBill,
-  totalCreditLimit,
+  initialBalance = 0,
+  initialCreditBill = 0,
+  totalCreditLimit = 0,
   onUpdateInitialBalance,
   onUpdateInitialCreditBill,
   onUpdateTotalCreditLimit,
@@ -48,9 +48,17 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [calibrationValue, setCalibrationValue] = useState('');
 
   const PAYMENT_CATEGORY = "Pagamento de Fatura";
-  const currentInvoiceMonth = currentDate.toISOString().slice(0, 7);
+  
+  // Garante datas válidas
+  const safeDate = currentDate || new Date();
+  const currentInvoiceMonth = safeDate.toISOString().slice(0, 7); // 'YYYY-MM'
+  
+  const nextDate = new Date(safeDate);
+  nextDate.setMonth(nextDate.getMonth() + 1);
+  const nextInvoiceMonth = nextDate.toISOString().slice(0, 7); // 'YYYY-MM'
 
   const categoryData = useMemo(() => {
+    if (!transactions) return [];
     const expenses = transactions.filter(t => 
       t.type === TransactionType.EXPENSE && 
       t.category !== PAYMENT_CATEGORY
@@ -73,52 +81,73 @@ const Dashboard: React.FC<DashboardProps> = ({
   }, [transactions]);
 
   const stats = useMemo(() => {
-    // --- LÓGICA DE FATURA HÍBRIDA (MANUAL + AUTOMÁTICA) ---
-    const belongsToCurrentInvoice = (t: Transaction) => {
-      if (t.invoiceMonth) {
-        return t.invoiceMonth === currentInvoiceMonth;
-      }
-      // Fallback matemático
-      const [y, m, d] = t.date.split('-').map(Number);
-      let targetMonth = m;
-      let targetYear = y;
-      if (d > closingDay) {
-        targetMonth++;
-        if (targetMonth > 12) { targetMonth = 1; targetYear++; }
-      }
-      const calculatedInvoice = `${targetYear}-${String(targetMonth).padStart(2, '0')}`;
-      return calculatedInvoice === currentInvoiceMonth;
+    const safeAll = allTransactions || [];
+    const safeMonthly = transactions || [];
+
+    // --- CÁLCULO SEGURO DA FATURA ---
+    const getInvoiceTotal = (targetMonth: string) => {
+      return safeAll
+        .filter(t => {
+          if (!t || t.type !== TransactionType.EXPENSE || t.paymentMethod !== PaymentMethod.CREDIT_CARD) return false;
+          
+          // 1. Prioridade: Etiqueta Manual
+          if (t.invoiceMonth) return t.invoiceMonth === targetMonth;
+
+          // 2. Cálculo Automático (com proteção de data)
+          if (!t.date) return false;
+          try {
+            const [y, m, d] = t.date.split('-').map(Number);
+            let tm = m;
+            let ty = y;
+            if (d > closingDay) {
+              tm++;
+              if (tm > 12) { tm = 1; ty++; }
+            }
+            const calc = `${ty}-${String(tm).padStart(2, '0')}`;
+            return calc === targetMonth;
+          } catch {
+            return false;
+          }
+        })
+        .reduce((acc, curr) => acc + curr.amount, 0);
     };
 
-    const receitas = transactions
+    const currentInvoiceTotal = getInvoiceTotal(currentInvoiceMonth);
+    const nextInvoiceTotal = getInvoiceTotal(nextInvoiceMonth);
+
+    // Cálculos gerais baseados no mês visualizado
+    const receitas = safeMonthly
       .filter(t => t.type === TransactionType.INCOME)
       .reduce((acc, curr) => acc + curr.amount, 0);
 
-    const immediateExpenses = transactions
+    const immediateExpenses = safeMonthly
       .filter(t => t.type === TransactionType.EXPENSE && t.paymentMethod !== PaymentMethod.CREDIT_CARD)
       .reduce((acc, curr) => acc + curr.amount, 0);
 
-    const faturaNovosGastos = allTransactions
-      .filter(t => 
-        t.type === TransactionType.EXPENSE && 
-        t.paymentMethod === PaymentMethod.CREDIT_CARD &&
-        belongsToCurrentInvoice(t)
-      )
-      .reduce((acc, curr) => acc + curr.amount, 0);
-
-    const pagamentosFatura = transactions
+    const pagamentosFatura = safeMonthly
       .filter(t => t.category === PAYMENT_CATEGORY)
       .reduce((acc, curr) => acc + curr.amount, 0);
 
-    const faturaTotal = (initialCreditBill + faturaNovosGastos) - pagamentosFatura;
-    const despesasConta = immediateExpenses - pagamentosFatura;
-    const totalGeralGastos = despesasConta + faturaNovosGastos;
-    
-    const cardExpenses = allTransactions
+    // Fatura Atual = (Saldo Inicial Fatura + Gastos da Fatura Atual - O que já paguei)
+    const faturaAtualLiquida = Math.max(0, (initialCreditBill + currentInvoiceTotal) - pagamentosFatura);
+
+    // Total usado no limite (Estimativa Global)
+    const totalCreditUsed = (initialCreditBill + currentInvoiceTotal + nextInvoiceTotal) - pagamentosFatura;
+
+    // Lista de ultimas compras da fatura atual
+    const cardExpensesCurrent = safeAll
       .filter(t => 
         t.type === TransactionType.EXPENSE && 
         t.paymentMethod === PaymentMethod.CREDIT_CARD &&
-        belongsToCurrentInvoice(t)
+        t.date &&
+        (t.invoiceMonth === currentInvoiceMonth || (!t.invoiceMonth && (() => {
+           try {
+             const [y, m, d] = t.date.split('-').map(Number);
+             let tm = m, ty = y;
+             if (d > closingDay) { tm++; if(tm>12){tm=1;ty++} }
+             return `${ty}-${String(tm).padStart(2, '0')}` === currentInvoiceMonth;
+           } catch { return false; }
+        })()))
       )
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
       .slice(0, 3);
@@ -127,17 +156,19 @@ const Dashboard: React.FC<DashboardProps> = ({
       saldo: initialBalance + receitas - immediateExpenses,
       receitas,
       despesasConta,
-      totalGeralGastos,
-      fatura: Math.max(0, faturaTotal),
+      totalGeralGastos: immediateExpenses + currentInvoiceTotal,
+      faturaAtual: faturaAtualLiquida,
+      faturaProxima: nextInvoiceTotal,
       limiteTotal: totalCreditLimit,
-      cardExpenses
+      totalCreditUsed,
+      cardExpenses: cardExpensesCurrent
     };
-  }, [transactions, allTransactions, initialBalance, initialCreditBill, totalCreditLimit, currentInvoiceMonth, closingDay]);
+  }, [transactions, allTransactions, initialBalance, initialCreditBill, totalCreditLimit, currentInvoiceMonth, nextInvoiceMonth, closingDay]);
 
-  const progressPercentage = (stats.fatura / stats.limiteTotal) * 100;
+  const progressPercentage = stats.limiteTotal > 0 ? (stats.totalCreditUsed / stats.limiteTotal) * 100 : 0;
 
   const categoryTransactions = useMemo(() => {
-    if (!selectedCategory) return [];
+    if (!selectedCategory || !transactions) return [];
     return transactions
       .filter(t => t.category === selectedCategory && t.type === TransactionType.EXPENSE)
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
@@ -184,31 +215,21 @@ const Dashboard: React.FC<DashboardProps> = ({
     onAddTransaction(paymentTransaction);
     setCalibrationValue('');
     setIsPayingBill(false);
-    alert("Pagamento registrado! Ele aparecerá no seu Extrato. ✨");
+    alert("Pagamento registrado! ✨");
   };
 
   const openBalanceCalibration = () => { setCalibrationValue(stats.saldo.toFixed(2)); setIsBalanceCalibrating(true); };
-  const openCreditCalibration = () => { setCalibrationValue(stats.fatura.toFixed(2)); setIsCreditCalibrating(true); };
+  const openCreditCalibration = () => { setCalibrationValue(stats.faturaAtual.toFixed(2)); setIsCreditCalibrating(true); };
   const openLimitCalibration = () => { setCalibrationValue(totalCreditLimit.toString()); setIsLimitCalibrating(true); };
 
-  // --- A MÁGICA DA CALIBRAÇÃO INTELIGENTE ✨ ---
   const saveCalibration = () => {
     const val = parseFloat(calibrationValue.replace(',', '.')) || 0;
-
     if (isBalanceCalibrating) {
-      // Calcula o "movimento líquido" do mês (tudo que entrou menos tudo que saiu)
       const currentNetMovement = stats.saldo - initialBalance;
-      // Define o novo saldo inicial para que o resultado final seja exatamente o que você digitou
-      const newInitial = val - currentNetMovement;
-      onUpdateInitialBalance(newInitial);
+      onUpdateInitialBalance(val - currentNetMovement);
     }
-    
-    if (isCreditCalibrating) {
-       onUpdateInitialCreditBill(val);
-    }
-
+    if (isCreditCalibrating) onUpdateInitialCreditBill(val);
     if (isLimitCalibrating) onUpdateTotalCreditLimit(val);
-
     setCalibrationValue('');
     setIsBalanceCalibrating(false);
     setIsCreditCalibrating(false);
@@ -216,22 +237,12 @@ const Dashboard: React.FC<DashboardProps> = ({
   };
 
   const StatCard = ({ title, value, color, bgColor = 'white', textColor = '#521256', onClick }: any) => (
-    <div 
-      onClick={onClick}
-      className={`p-6 rounded-[2rem] shadow-xl shadow-[#521256]/5 border border-white/40 flex flex-col justify-between transition-all group ${onClick ? 'cursor-pointer hover:scale-[1.02] active:scale-95' : ''}`} 
-      style={{ backgroundColor: bgColor }}
-    >
+    <div onClick={onClick} className={`p-6 rounded-[2rem] shadow-xl shadow-[#521256]/5 border border-white/40 flex flex-col justify-between transition-all group ${onClick ? 'cursor-pointer hover:scale-[1.02] active:scale-95' : ''}`} style={{ backgroundColor: bgColor }}>
       <div className="flex justify-between items-start">
         <span className="text-[10px] uppercase tracking-widest font-black opacity-50" style={{ color: textColor }}>{title}</span>
-        {onClick && (
-          <span className="opacity-0 group-hover:opacity-40 transition-opacity">
-            <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" /></svg>
-          </span>
-        )}
+        {onClick && <span className="opacity-0 group-hover:opacity-40 transition-opacity"><svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" /></svg></span>}
       </div>
-      <h3 className="text-2xl font-black mt-2 tracking-tight" style={{ color: color || textColor }}>
-        R$ {value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-      </h3>
+      <h3 className="text-2xl font-black mt-2 tracking-tight" style={{ color: color || textColor }}>R$ {value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</h3>
     </div>
   );
 
@@ -241,7 +252,7 @@ const Dashboard: React.FC<DashboardProps> = ({
         <StatCard title="Saldo Disponível" value={stats.saldo} bgColor={COLORS.BASE} onClick={openBalanceCalibration} />
         <StatCard title="Receitas do Mês 🤩" value={stats.receitas} bgColor="#e2e585" textColor="#521256" />
         <StatCard title="Saídas (Débito) 🔻" value={stats.despesasConta} color="#ef4444" />
-        <StatCard title={`Fatura ${currentDate.toLocaleDateString('pt-BR', {month: 'long'})} 💳`} value={stats.fatura} onClick={openCreditCalibration} />
+        <StatCard title="Total no Cartão 💳" value={stats.faturaAtual} onClick={openCreditCalibration} />
         <StatCard title="Despesas Totais 💰" value={stats.totalGeralGastos} color="#ef4444" />
       </div>
 
@@ -255,57 +266,77 @@ const Dashboard: React.FC<DashboardProps> = ({
         </button>
       </div>
 
-      <div className="bg-white rounded-[2.5rem] p-8 lg:p-12 shadow-2xl shadow-[#521256]/10 border border-white/20">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-8">
-          <div className="flex-1">
-            <h3 className="text-2xl font-black text-[#521256] mb-1">Gestão de Fatura ✨</h3>
-            <p className="text-sm font-semibold opacity-60">Visualizando fatura de <span className="text-[#f170c3] uppercase font-bold">{currentDate.toLocaleDateString('pt-BR', {month: 'long', year: 'numeric'})}</span></p>
-          </div>
-          <div className="text-right">
-            <span className="text-xs font-black opacity-40 uppercase tracking-tighter">Limite Disponível</span>
-            <p className="text-2xl font-black text-[#521256]">R$ {(stats.limiteTotal - stats.fatura).toLocaleString('pt-BR')}</p>
-          </div>
+      {/* --- AQUI ESTÁ A NOVIDADE: CARDS DE FATURA DIVIDIDOS --- */}
+      <div className="bg-white rounded-[2.5rem] p-8 lg:p-10 shadow-2xl shadow-[#521256]/10 border border-white/20">
+        
+        <div className="flex justify-between items-center mb-6">
+           <h3 className="text-2xl font-black text-[#521256]">Gestão de Fatura ✨</h3>
+           <div className="text-right">
+             <span className="text-[10px] font-black opacity-40 uppercase tracking-widest block">Limite Disponível</span>
+             <button onClick={openLimitCalibration} className="text-xl font-black text-[#521256] hover:text-[#f170c3] transition-colors">
+               R$ {(stats.limiteTotal - stats.totalCreditUsed).toLocaleString('pt-BR')}
+             </button>
+           </div>
         </div>
 
-        <div className="mb-10">
-          <div className="flex justify-between items-end mb-3">
-            <span className="text-xs font-black text-[#f170c3] uppercase">Limite Utilizado ({progressPercentage.toFixed(0)}%)</span>
-            <div className="flex gap-4 items-center">
-              <button onClick={() => setIsPayingBill(true)} className="text-[10px] bg-[#521256] text-white px-3 py-1.5 rounded-full font-black hover:scale-105 transition-all shadow-md">PAGAR FATURA</button>
-              <button onClick={openLimitCalibration} className="flex items-center gap-1 text-xs font-bold text-[#521256]/40 hover:text-[#521256] transition-colors group">
-                R$ {stats.limiteTotal.toLocaleString('pt-BR')} total
-                <svg className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" fill="currentColor" viewBox="0 0 20 20"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" /></svg>
-              </button>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+            {/* Card ESQUERDA: Fatura Atual */}
+            <div className="bg-[#efd2fe]/20 p-6 rounded-[2rem] border border-[#efd2fe] relative overflow-hidden group">
+                <div className="absolute top-0 right-0 bg-[#f170c3] text-white text-[10px] font-black px-3 py-1 rounded-bl-xl">ATUAL</div>
+                <p className="text-[10px] font-black opacity-50 uppercase tracking-widest mb-1">Vence em {safeDate.toLocaleDateString('pt-BR', {month: 'long'}).toUpperCase()}</p>
+                <h2 className="text-3xl font-black text-[#521256] mb-4">R$ {stats.faturaAtual.toLocaleString('pt-BR')}</h2>
+                <div className="flex items-center gap-2">
+                   <button onClick={() => setIsPayingBill(true)} className="flex-1 bg-[#521256] text-white py-3 rounded-xl font-black text-xs hover:scale-[1.02] active:scale-95 transition-all shadow-lg">
+                     PAGAR FATURA
+                   </button>
+                   <button onClick={openCreditCalibration} className="px-3 py-3 bg-white rounded-xl text-[#521256] hover:bg-[#efd2fe] transition-colors">
+                     ⚙️
+                   </button>
+                </div>
             </div>
+
+            {/* Card DIREITA: Fatura Próxima */}
+            <div className="bg-white p-6 rounded-[2rem] border-2 border-dashed border-[#efd2fe] relative opacity-80 hover:opacity-100 transition-opacity">
+                <div className="absolute top-0 right-0 bg-[#a3e635] text-[#1a2e05] text-[10px] font-black px-3 py-1 rounded-bl-xl">PRÓXIMA</div>
+                <p className="text-[10px] font-black opacity-40 uppercase tracking-widest mb-1">Vence em {nextDate.toLocaleDateString('pt-BR', {month: 'long'}).toUpperCase()}</p>
+                <h2 className="text-3xl font-black text-[#521256]/60 mb-1">R$ {stats.faturaProxima.toLocaleString('pt-BR')}</h2>
+                <p className="text-[10px] font-bold text-[#f170c3]">Acumulado até agora</p>
+            </div>
+        </div>
+
+        <div className="mb-8">
+          <div className="flex justify-between items-end mb-2">
+            <span className="text-[10px] font-black text-[#f170c3] uppercase tracking-widest">Limite Utilizado ({progressPercentage.toFixed(0)}%)</span>
+            <span className="text-[10px] font-bold opacity-40">Total: R$ {stats.limiteTotal.toLocaleString('pt-BR')}</span>
           </div>
-          <div className="w-full h-6 bg-[#efd2fe]/40 rounded-full overflow-hidden p-1 shadow-inner border border-[#efd2fe]">
-            <div className="h-full bg-gradient-to-r from-[#f170c3] to-[#521256] rounded-full transition-all duration-1000 ease-out shadow-lg" style={{ width: `${Math.min(progressPercentage, 100)}%` }}></div>
+          <div className="w-full h-4 bg-[#efd2fe]/40 rounded-full overflow-hidden p-0.5 shadow-inner">
+            <div className="h-full bg-gradient-to-r from-[#f170c3] to-[#521256] rounded-full transition-all duration-1000 ease-out shadow-sm" style={{ width: `${Math.min(progressPercentage, 100)}%` }}></div>
           </div>
         </div>
 
         <div>
-          <h4 className="text-xs font-black text-[#521256] opacity-40 uppercase tracking-widest mb-4">Últimas desta Fatura</h4>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <h4 className="text-[10px] font-black text-[#521256] opacity-40 uppercase tracking-widest mb-4">Últimas desta Fatura</h4>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {stats.cardExpenses.map((t) => (
-              <div key={t.id} className="bg-[#efd2fe]/30 p-5 rounded-2xl border border-white/50 flex items-center justify-between hover:bg-white transition-colors cursor-pointer group">
+              <div key={t.id} className="bg-[#efd2fe]/30 p-4 rounded-2xl border border-white/50 flex items-center justify-between hover:bg-white transition-colors cursor-pointer group">
                 <div className="flex items-center gap-3">
-                   <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center text-xl shadow-sm">💳</div>
-                   <div>
-                     <p className="text-sm font-black text-[#521256] line-clamp-1">{t.description}</p>
-                     <p className="text-xs font-bold opacity-50">{new Date(t.date).toLocaleDateString('pt-BR')}</p>
+                   <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center text-lg shadow-sm">💳</div>
+                   <div className="overflow-hidden">
+                     <p className="text-xs font-black text-[#521256] truncate">{t.description}</p>
+                     <p className="text-[9px] font-bold opacity-50">{new Date(t.date).toLocaleDateString('pt-BR')}</p>
                    </div>
                 </div>
-                <span className="text-sm font-black text-[#521256] group-hover:text-[#f170c3]">R$ {t.amount.toLocaleString('pt-BR')}</span>
+                <span className="text-xs font-black text-[#521256] group-hover:text-[#f170c3]">R$ {t.amount.toLocaleString('pt-BR')}</span>
               </div>
             ))}
-            {stats.cardExpenses.length === 0 && (<p className="col-span-3 text-center py-4 text-xs font-bold opacity-30 italic">Nenhum gasto nesta fatura ainda.</p>)}
+            {stats.cardExpenses.length === 0 && (<p className="col-span-3 text-center py-2 text-xs font-bold opacity-30 italic">Nenhum gasto nesta fatura ainda.</p>)}
           </div>
         </div>
       </div>
 
       <div className="grid grid-cols-1 gap-8">
         <div className="bg-white/70 rounded-[2.5rem] p-10 shadow-xl shadow-[#521256]/5 border border-white/40">
-          <h3 className="text-xl font-black text-[#521256] mb-8 flex items-center justify-between">Análise por Categoria (Data da Compra) <span>🔎</span></h3>
+          <h3 className="text-xl font-black text-[#521256] mb-8 flex items-center justify-between">Análise por Categoria <span>🔎</span></h3>
           <div className="flex flex-col lg:flex-row items-center gap-8 lg:gap-12">
             <div className="h-[300px] w-full lg:w-1/2">
               <ResponsiveContainer width="100%" height="100%">
