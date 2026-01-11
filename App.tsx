@@ -10,7 +10,7 @@ import Market from './components/Market';
 import ChatAssistant from './components/ChatAssistant';
 import CategoryManagerModal from './components/CategoryManagerModal';
 import MonthSelector from './components/MonthSelector';
-import { Transaction, CategoryBudget, InvestmentTransaction, User, MarketItem } from './types';
+import { Transaction, CategoryBudget, InvestmentTransaction, User, MarketItem, PaymentMethod, TransactionType } from './types';
 import { INITIAL_CATEGORIES } from './constants';
 import { auth, db } from './lib/firebase';
 import { onAuthStateChanged, signOut, updateProfile, updatePassword } from 'firebase/auth';
@@ -31,14 +31,43 @@ const App: React.FC = () => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [allTransactions, setAllTransactions] = useState<Transaction[]>([]);
   
-  // Filtro visual (Lista) -> Pela data da compra
+  // NOVOS ESTADOS PARA O CARTÃO 💳
+  const [closingDay, setClosingDay] = useState<number>(6); // Default 06
+  const [dueDay, setDueDay] = useState<number>(13);       // Default 13
+
+  // --- O FILTRO INTELIGENTE CORRIGIDO ---
+  // Agora o Extrato segue a regra da Fatura para Cartão de Crédito!
   const monthlyTransactions = useMemo(() => {
+    const currentInvoiceMonth = currentDate.toISOString().slice(0, 7); // Ex: '2026-01'
+
     return allTransactions.filter(t => {
+      // 1. LÓGICA PARA CARTÃO DE CRÉDITO 💳
+      if (t.type === TransactionType.EXPENSE && t.paymentMethod === PaymentMethod.CREDIT_CARD) {
+         // Se tiver etiqueta manual, respeita ela
+         if (t.invoiceMonth) {
+            return t.invoiceMonth === currentInvoiceMonth;
+         }
+         
+         // Se não tiver, usa a matemática do dia de fechamento
+         const [y, m, d] = t.date.split('-').map(Number);
+         let targetMonth = m;
+         let targetYear = y;
+         
+         if (d > closingDay) {
+           targetMonth++;
+           if (targetMonth > 12) { targetMonth = 1; targetYear++; }
+         }
+         
+         const calculatedInvoice = `${targetYear}-${String(targetMonth).padStart(2, '0')}`;
+         return calculatedInvoice === currentInvoiceMonth;
+      }
+
+      // 2. LÓGICA PARA DÉBITO, PIX E RECEITAS (Segue o mês normal) 📅
       const tDate = new Date(t.date + 'T12:00:00');
       return tDate.getMonth() === currentDate.getMonth() && 
              tDate.getFullYear() === currentDate.getFullYear();
     });
-  }, [allTransactions, currentDate]);
+  }, [allTransactions, currentDate, closingDay]); // Atualiza quando muda o dia de fechamento
 
   const [budgets, setBudgets] = useState<CategoryBudget[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
@@ -48,10 +77,6 @@ const App: React.FC = () => {
   const [initialBalance, setInitialBalance] = useState<number>(0);
   const [initialCreditBill, setInitialCreditBill] = useState<number>(0);
   const [totalCreditLimit, setTotalCreditLimit] = useState<number>(5000);
-  
-  // NOVOS ESTADOS PARA O CARTÃO 💳
-  const [closingDay, setClosingDay] = useState<number>(6); // Default 06
-  const [dueDay, setDueDay] = useState<number>(13);       // Default 13
 
   const [isCatManagerOpen, setIsCatManagerOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -138,7 +163,6 @@ const App: React.FC = () => {
         setInitialBalance(data.initialBalance || 0);
         setInitialCreditBill(data.initialCreditBill || 0);
         setTotalCreditLimit(data.totalCreditLimit || 5000);
-        // Carrega configurações do cartão
         if (data.closingDay) setClosingDay(data.closingDay);
         if (data.dueDay) setDueDay(data.dueDay);
       }
@@ -177,7 +201,6 @@ const App: React.FC = () => {
 
   const handleLogout = async () => { await signOut(auth); setIsSettingsOpen(false); };
   
-  // --- FUNÇÃO DE ADICIONAR COM LÓGICA DE RECORRÊNCIA E FATURA 📅 ---
   const addTransaction = async (t: Omit<Transaction, 'id'>) => { 
     if (!currentUser) return; 
 
@@ -186,22 +209,29 @@ const App: React.FC = () => {
         const startDate = new Date(t.date + 'T12:00:00');
         let startInvoiceDate = t.invoiceMonth ? new Date(t.invoiceMonth + '-02') : null;
 
+        // Se não veio invoiceMonth manual, calcula o inicial baseado na data
+        if (!startInvoiceDate && t.type === TransactionType.EXPENSE && t.paymentMethod === PaymentMethod.CREDIT_CARD) {
+           const day = startDate.getDate();
+           if (day > closingDay) startDate.setMonth(startDate.getMonth() + 1);
+           startInvoiceDate = startDate;
+        }
+
         for (let i = 0; i < 12; i++) {
-            const futureDate = new Date(startDate);
+            const futureDate = new Date(startDate); // Data da compra avança mês a mês
             futureDate.setMonth(startDate.getMonth() + i);
             const isoDate = futureDate.toISOString().split('T')[0];
 
             let futureInvoiceMonth = undefined;
             if (startInvoiceDate) {
-               const fInvoice = new Date(startInvoiceDate);
+               const fInvoice = new Date(startInvoiceDate); // Fatura avança mês a mês
                fInvoice.setMonth(startInvoiceDate.getMonth() + i);
-               futureInvoiceMonth = fInvoice.toISOString().slice(0, 7); // 'YYYY-MM'
+               futureInvoiceMonth = fInvoice.toISOString().slice(0, 7); 
             }
 
             await addDoc(collection(db, "transactions"), { 
                 ...t, 
                 date: isoDate, 
-                invoiceMonth: futureInvoiceMonth, // Incrementa a fatura também
+                invoiceMonth: futureInvoiceMonth,
                 uid: currentUser.id,
                 createdAt: Date.now() + i 
             });
@@ -275,9 +305,9 @@ const App: React.FC = () => {
             <div className="pb-24 lg:pb-0">
               {monthSelector}
               <Dashboard 
-                transactions={monthlyTransactions}
-                allTransactions={allTransactions} // Passando TODAS para cálculo da fatura
-                currentDate={currentDate} // Passando mês atual para saber qual fatura olhar
+                transactions={monthlyTransactions} // <--- AGORA ESSA LISTA JÁ VEM FILTRADA CORRETA!
+                allTransactions={allTransactions}
+                currentDate={currentDate} 
                 onAddTransaction={addTransaction}
                 categories={categories}
                 onOpenCategoryManager={() => setIsCatManagerOpen(true)}
@@ -287,7 +317,7 @@ const App: React.FC = () => {
                 onUpdateInitialBalance={(v) => updSet({ initialBalance: v })}
                 onUpdateInitialCreditBill={(v) => updSet({ initialCreditBill: v })}
                 onUpdateTotalCreditLimit={(v) => updSet({ totalCreditLimit: v })}
-                closingDay={closingDay} // Passando dia de fechamento
+                closingDay={closingDay}
               />
             </div>
           )}
@@ -321,12 +351,20 @@ const App: React.FC = () => {
           {activeTab === 'history' && (
             <div className="w-full max-w-5xl mx-auto pb-24 lg:pb-0">
               {monthSelector}
-              <History transactions={monthlyTransactions} onAddTransaction={addTransaction} onUpdateTransaction={updateTransaction} onDeleteTransaction={deleteTransaction} categories={categories} onOpenCategoryManager={() => setIsCatManagerOpen(true)} />
+              <History 
+                transactions={monthlyTransactions} // O EXTRATO USA ISSO AQUI! AGORA VAI APARECER!
+                onAddTransaction={addTransaction}
+                onUpdateTransaction={updateTransaction}
+                onDeleteTransaction={deleteTransaction}
+                categories={categories}
+                onOpenCategoryManager={() => setIsCatManagerOpen(true)}
+              />
             </div>
           )}
         </div>
       </div>
       
+      {/* ... MODAIS E CONFIGURAÇÕES ... */}
       <CategoryManagerModal isOpen={isCatManagerOpen} onClose={() => setIsCatManagerOpen(false)} categories={categories} onRename={() => {}} onDelete={async (name) => { if (confirm(`Excluir categoria "${name}"?`)) { const q = query(collection(db, "categories"), where("uid", "==", currentUser.id), where("name", "==", name)); const snap = await getDocs(q); snap.docs.forEach(d => deleteDoc(d.ref)); }}} />
       
       {isSettingsOpen && (
@@ -341,7 +379,6 @@ const App: React.FC = () => {
              </div>
 
              <div className="space-y-5">
-                {/* ... inputs de nome/avatar ... */}
                 <div>
                   <label className="text-[10px] font-black text-[#521256]/50 uppercase tracking-widest mb-1 block">Seu Nome</label>
                   <input type="text" value={editName} onChange={(e) => setEditName(e.target.value)} className="w-full px-4 py-3 bg-[#efd2fe]/30 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#f170c3] text-[#521256] font-bold" />
@@ -358,38 +395,17 @@ const App: React.FC = () => {
                   </div>
                 </div>
 
-                {/* --- CONFIGURAÇÃO DO CARTÃO 💳 --- */}
                 <div className="pt-4 border-t border-[#efd2fe]">
                   <h4 className="text-xs font-black text-[#521256] uppercase mb-3">Configuração do Cartão 💳</h4>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="text-[10px] font-black text-[#521256]/50 uppercase tracking-widest mb-1 block">Dia Fechamento</label>
-                      <input 
-                        type="number" 
-                        min="1" max="31"
-                        value={closingDay} 
-                        onChange={(e) => {
-                          const val = Number(e.target.value);
-                          setClosingDay(val);
-                          updSet({ closingDay: val });
-                        }} 
-                        className="w-full px-4 py-3 bg-[#efd2fe]/30 rounded-xl font-bold text-[#521256] text-center focus:outline-none focus:ring-2 focus:ring-[#f170c3]" 
-                      />
+                      <input type="number" min="1" max="31" value={closingDay} onChange={(e) => { const val = Number(e.target.value); setClosingDay(val); updSet({ closingDay: val }); }} className="w-full px-4 py-3 bg-[#efd2fe]/30 rounded-xl font-bold text-[#521256] text-center focus:outline-none focus:ring-2 focus:ring-[#f170c3]" />
                       <p className="text-[9px] text-[#521256]/40 mt-1">Dia que a fatura vira.</p>
                     </div>
                     <div>
                       <label className="text-[10px] font-black text-[#521256]/50 uppercase tracking-widest mb-1 block">Dia Vencimento</label>
-                      <input 
-                        type="number" 
-                        min="1" max="31"
-                        value={dueDay} 
-                        onChange={(e) => {
-                          const val = Number(e.target.value);
-                          setDueDay(val);
-                          updSet({ dueDay: val });
-                        }} 
-                        className="w-full px-4 py-3 bg-[#efd2fe]/30 rounded-xl font-bold text-[#521256] text-center focus:outline-none focus:ring-2 focus:ring-[#f170c3]" 
-                      />
+                      <input type="number" min="1" max="31" value={dueDay} onChange={(e) => { const val = Number(e.target.value); setDueDay(val); updSet({ dueDay: val }); }} className="w-full px-4 py-3 bg-[#efd2fe]/30 rounded-xl font-bold text-[#521256] text-center focus:outline-none focus:ring-2 focus:ring-[#f170c3]" />
                     </div>
                   </div>
                 </div>
