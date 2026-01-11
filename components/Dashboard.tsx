@@ -6,7 +6,7 @@ import TransactionModal from './TransactionModal';
 
 interface DashboardProps {
   transactions: Transaction[]; 
-  allTransactions: Transaction[]; 
+  allTransactions?: Transaction[]; // Opcional para evitar crash
   currentDate: Date; 
   onAddTransaction: (t: Transaction) => void;
   categories?: string[];
@@ -22,16 +22,16 @@ interface DashboardProps {
 }
 
 const Dashboard: React.FC<DashboardProps> = ({ 
-  transactions, 
-  allTransactions,
+  transactions = [], 
+  allTransactions = [], // Proteção: Se vier vazio, usa lista vazia
   currentDate,
   onAddTransaction, 
   categories = [],
   onAddCategory,
   onOpenCategoryManager,
-  initialBalance,
-  initialCreditBill,
-  totalCreditLimit,
+  initialBalance = 0,
+  initialCreditBill = 0,
+  totalCreditLimit = 0,
   onUpdateInitialBalance,
   onUpdateInitialCreditBill,
   onUpdateTotalCreditLimit,
@@ -49,14 +49,16 @@ const Dashboard: React.FC<DashboardProps> = ({
 
   const PAYMENT_CATEGORY = "Pagamento de Fatura";
   
-  // Datas de referência
-  const currentInvoiceMonth = currentDate.toISOString().slice(0, 7); // Ex: 2026-01
+  // Garante que as datas existem para não quebrar
+  const safeDate = currentDate || new Date();
+  const currentInvoiceMonth = safeDate.toISOString().slice(0, 7); // Ex: 2026-01
   
-  const nextDate = new Date(currentDate);
+  const nextDate = new Date(safeDate);
   nextDate.setMonth(nextDate.getMonth() + 1);
   const nextInvoiceMonth = nextDate.toISOString().slice(0, 7); // Ex: 2026-02
 
   const categoryData = useMemo(() => {
+    if (!transactions) return [];
     const expenses = transactions.filter(t => 
       t.type === TransactionType.EXPENSE && 
       t.category !== PAYMENT_CATEGORY
@@ -79,25 +81,34 @@ const Dashboard: React.FC<DashboardProps> = ({
   }, [transactions]);
 
   const stats = useMemo(() => {
+    // Lista segura de todas as transações
+    const safeAllTransactions = allTransactions || [];
+
     // --- LÓGICA DE CÁLCULO DA FATURA ---
     const getInvoiceTotal = (targetMonth: string) => {
-      return allTransactions
+      return safeAllTransactions
         .filter(t => {
-          if (t.type !== TransactionType.EXPENSE || t.paymentMethod !== PaymentMethod.CREDIT_CARD) return false;
+          if (!t || t.type !== TransactionType.EXPENSE || t.paymentMethod !== PaymentMethod.CREDIT_CARD) return false;
           
           // 1. Respeita etiqueta manual
           if (t.invoiceMonth) return t.invoiceMonth === targetMonth;
 
-          // 2. Cálculo automático
-          const [y, m, d] = t.date.split('-').map(Number);
-          let tm = m;
-          let ty = y;
-          if (d > closingDay) {
-            tm++;
-            if (tm > 12) { tm = 1; ty++; }
+          // 2. Cálculo automático (Com proteção de data)
+          if (!t.date) return false; // Se não tiver data, ignora
+          
+          try {
+            const [y, m, d] = t.date.split('-').map(Number);
+            let tm = m;
+            let ty = y;
+            if (d > closingDay) {
+                tm++;
+                if (tm > 12) { tm = 1; ty++; }
+            }
+            const calc = `${ty}-${String(tm).padStart(2, '0')}`;
+            return calc === targetMonth;
+          } catch (e) {
+            return false;
           }
-          const calc = `${ty}-${String(tm).padStart(2, '0')}`;
-          return calc === targetMonth;
         })
         .reduce((acc, curr) => acc + curr.amount, 0);
     };
@@ -105,36 +116,40 @@ const Dashboard: React.FC<DashboardProps> = ({
     const currentInvoiceTotal = getInvoiceTotal(currentInvoiceMonth);
     const nextInvoiceTotal = getInvoiceTotal(nextInvoiceMonth);
 
-    // Cálculos gerais
-    const receitas = transactions
+    // Cálculos gerais (usando a lista do mês 'transactions')
+    const safeTransactions = transactions || [];
+    
+    const receitas = safeTransactions
       .filter(t => t.type === TransactionType.INCOME)
       .reduce((acc, curr) => acc + curr.amount, 0);
 
-    const immediateExpenses = transactions
+    const immediateExpenses = safeTransactions
       .filter(t => t.type === TransactionType.EXPENSE && t.paymentMethod !== PaymentMethod.CREDIT_CARD)
       .reduce((acc, curr) => acc + curr.amount, 0);
 
-    const pagamentosFatura = transactions
+    const pagamentosFatura = safeTransactions
       .filter(t => t.category === PAYMENT_CATEGORY)
       .reduce((acc, curr) => acc + curr.amount, 0);
 
     // Fatura Atual Líquida (Gastos - Pagamentos)
     const faturaAtualLiquida = Math.max(0, (initialCreditBill + currentInvoiceTotal) - pagamentosFatura);
 
-    // Para o limite, consideramos uma estimativa de uso total
-    // (Fatura Atual + Próxima + Inicial - Pagos)
+    // Estimativa de uso total
     const totalCreditUsed = (initialCreditBill + currentInvoiceTotal + nextInvoiceTotal) - pagamentosFatura; 
     
     // Lista para exibir (apenas fatura atual)
-    const cardExpensesCurrent = allTransactions
+    const cardExpensesCurrent = safeAllTransactions
       .filter(t => 
         t.type === TransactionType.EXPENSE && 
         t.paymentMethod === PaymentMethod.CREDIT_CARD &&
+        t.date && // Proteção
         (t.invoiceMonth === currentInvoiceMonth || (!t.invoiceMonth && (() => {
-           const [y, m, d] = t.date.split('-').map(Number);
-           let tm = m, ty = y;
-           if (d > closingDay) { tm++; if(tm>12){tm=1;ty++} }
-           return `${ty}-${String(tm).padStart(2, '0')}` === currentInvoiceMonth;
+           try {
+             const [y, m, d] = t.date.split('-').map(Number);
+             let tm = m, ty = y;
+             if (d > closingDay) { tm++; if(tm>12){tm=1;ty++} }
+             return `${ty}-${String(tm).padStart(2, '0')}` === currentInvoiceMonth;
+           } catch { return false; }
         })()))
       )
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
@@ -153,10 +168,10 @@ const Dashboard: React.FC<DashboardProps> = ({
     };
   }, [transactions, allTransactions, initialBalance, initialCreditBill, totalCreditLimit, currentInvoiceMonth, nextInvoiceMonth, closingDay]);
 
-  const progressPercentage = (stats.totalCreditUsed / stats.limiteTotal) * 100;
+  const progressPercentage = stats.limiteTotal > 0 ? (stats.totalCreditUsed / stats.limiteTotal) * 100 : 0;
 
   const categoryTransactions = useMemo(() => {
-    if (!selectedCategory) return [];
+    if (!selectedCategory || !transactions) return [];
     return transactions
       .filter(t => t.category === selectedCategory && t.type === TransactionType.EXPENSE)
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
@@ -274,7 +289,7 @@ const Dashboard: React.FC<DashboardProps> = ({
             {/* Card ESQUERDA: Mês Atual */}
             <div className="bg-[#efd2fe]/20 p-6 rounded-[2rem] border border-[#efd2fe] relative overflow-hidden group">
                 <div className="absolute top-0 right-0 bg-[#f170c3] text-white text-[10px] font-black px-3 py-1 rounded-bl-xl">ATUAL</div>
-                <p className="text-[10px] font-black opacity-50 uppercase tracking-widest mb-1">Vence em {currentDate.toLocaleDateString('pt-BR', {month: 'long'}).toUpperCase()}</p>
+                <p className="text-[10px] font-black opacity-50 uppercase tracking-widest mb-1">Vence em {safeDate.toLocaleDateString('pt-BR', {month: 'long'}).toUpperCase()}</p>
                 <h2 className="text-3xl font-black text-[#521256] mb-4">R$ {stats.faturaAtual.toLocaleString('pt-BR')}</h2>
                 <div className="flex items-center gap-2">
                    <button onClick={() => setIsPayingBill(true)} className="flex-1 bg-[#521256] text-white py-3 rounded-xl font-black text-xs hover:scale-[1.02] active:scale-95 transition-all shadow-lg">
@@ -391,7 +406,7 @@ const Dashboard: React.FC<DashboardProps> = ({
               {isPayingBill ? 'Pagar Fatura 💳' : (isLimitCalibrating ? 'Definir Limite Total' : 'Calibrar ' + (isBalanceCalibrating ? 'Saldo' : 'Fatura Atual')) + ' ✨'}
             </h3>
              <p className="text-xs font-bold text-[#521256]/40 mb-8 text-center uppercase tracking-widest">
-              {isPayingBill ? 'Quanto você vai pagar/antecipar?' : (isLimitCalibrating ? 'Qual é o limite somado dos cartões?' : (isBalanceCalibrating ? 'Saldo real atual?' : 'Valor real da fatura de ' + currentDate.toLocaleDateString('pt-BR', {month: 'long'}) + '?'))}
+              {isPayingBill ? 'Quanto você vai pagar/antecipar?' : (isLimitCalibrating ? 'Qual é o limite somado dos cartões?' : (isBalanceCalibrating ? 'Saldo real atual?' : 'Valor real da fatura de ' + safeDate.toLocaleDateString('pt-BR', {month: 'long'}) + '?'))}
             </p>
             <div className="mb-8">
               <label className="text-[10px] font-black text-[#521256]/50 uppercase tracking-[0.2em] mb-2 block">Valor em R$</label>
