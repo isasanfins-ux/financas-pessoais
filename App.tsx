@@ -10,7 +10,7 @@ import Market from './components/Market';
 import ChatAssistant from './components/ChatAssistant';
 import CategoryManagerModal from './components/CategoryManagerModal';
 import MonthSelector from './components/MonthSelector';
-import { Transaction, CategoryBudget, InvestmentTransaction, User, MarketItem, PaymentMethod, TransactionType } from './types';
+import { Transaction, CategoryBudget, InvestmentTransaction, User, MarketItem } from './types';
 import { INITIAL_CATEGORIES } from './constants';
 import { auth, db } from './lib/firebase';
 import { onAuthStateChanged, signOut, updateProfile, updatePassword } from 'firebase/auth';
@@ -35,39 +35,16 @@ const App: React.FC = () => {
   const [closingDay, setClosingDay] = useState<number>(6); // Default 06
   const [dueDay, setDueDay] = useState<number>(13);       // Default 13
 
-  // --- O FILTRO INTELIGENTE CORRIGIDO ---
-  // Agora o Extrato segue a regra da Fatura para Cartão de Crédito!
+  // --- O FILTRO "CALENDÁRIO PURO" (CORRIGIDO) ---
+  // Aqui voltamos ao básico: Se a data é de Janeiro, mostra em Janeiro.
+  // A inteligência da fatura fica SÓ no Dashboard, não aqui na lista.
   const monthlyTransactions = useMemo(() => {
-    const currentInvoiceMonth = currentDate.toISOString().slice(0, 7); // Ex: '2026-01'
-
     return allTransactions.filter(t => {
-      // 1. LÓGICA PARA CARTÃO DE CRÉDITO 💳
-      if (t.type === TransactionType.EXPENSE && t.paymentMethod === PaymentMethod.CREDIT_CARD) {
-         // Se tiver etiqueta manual, respeita ela
-         if (t.invoiceMonth) {
-            return t.invoiceMonth === currentInvoiceMonth;
-         }
-         
-         // Se não tiver, usa a matemática do dia de fechamento
-         const [y, m, d] = t.date.split('-').map(Number);
-         let targetMonth = m;
-         let targetYear = y;
-         
-         if (d > closingDay) {
-           targetMonth++;
-           if (targetMonth > 12) { targetMonth = 1; targetYear++; }
-         }
-         
-         const calculatedInvoice = `${targetYear}-${String(targetMonth).padStart(2, '0')}`;
-         return calculatedInvoice === currentInvoiceMonth;
-      }
-
-      // 2. LÓGICA PARA DÉBITO, PIX E RECEITAS (Segue o mês normal) 📅
       const tDate = new Date(t.date + 'T12:00:00');
       return tDate.getMonth() === currentDate.getMonth() && 
              tDate.getFullYear() === currentDate.getFullYear();
     });
-  }, [allTransactions, currentDate, closingDay]); // Atualiza quando muda o dia de fechamento
+  }, [allTransactions, currentDate]);
 
   const [budgets, setBudgets] = useState<CategoryBudget[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
@@ -201,6 +178,7 @@ const App: React.FC = () => {
 
   const handleLogout = async () => { await signOut(auth); setIsSettingsOpen(false); };
   
+  // --- FUNÇÃO DE ADICIONAR COM RECORRÊNCIA E CÁLCULO DE FATURA 📅 ---
   const addTransaction = async (t: Omit<Transaction, 'id'>) => { 
     if (!currentUser) return; 
 
@@ -210,20 +188,23 @@ const App: React.FC = () => {
         let startInvoiceDate = t.invoiceMonth ? new Date(t.invoiceMonth + '-02') : null;
 
         // Se não veio invoiceMonth manual, calcula o inicial baseado na data
-        if (!startInvoiceDate && t.type === TransactionType.EXPENSE && t.paymentMethod === PaymentMethod.CREDIT_CARD) {
+        if (!startInvoiceDate && t.type === 'EXPENSE' && t.paymentMethod === 'Cartão de Crédito') {
            const day = startDate.getDate();
+           // Se comprou dia 28/12, a primeira parcela já cai na fatura de JANEIRO
            if (day > closingDay) startDate.setMonth(startDate.getMonth() + 1);
            startInvoiceDate = startDate;
         }
 
         for (let i = 0; i < 12; i++) {
-            const futureDate = new Date(startDate); // Data da compra avança mês a mês
-            futureDate.setMonth(startDate.getMonth() + i);
+            const futureDate = new Date(startDate); 
+            // Avança a DATA da transação (Jan, Fev, Mar...)
+            futureDate.setMonth(new Date(t.date + 'T12:00:00').getMonth() + i);
             const isoDate = futureDate.toISOString().split('T')[0];
 
             let futureInvoiceMonth = undefined;
             if (startInvoiceDate) {
-               const fInvoice = new Date(startInvoiceDate); // Fatura avança mês a mês
+               const fInvoice = new Date(startInvoiceDate); 
+               // Avança a FATURA de referência
                fInvoice.setMonth(startInvoiceDate.getMonth() + i);
                futureInvoiceMonth = fInvoice.toISOString().slice(0, 7); 
             }
@@ -305,7 +286,7 @@ const App: React.FC = () => {
             <div className="pb-24 lg:pb-0">
               {monthSelector}
               <Dashboard 
-                transactions={monthlyTransactions} // <--- AGORA ESSA LISTA JÁ VEM FILTRADA CORRETA!
+                transactions={monthlyTransactions}
                 allTransactions={allTransactions}
                 currentDate={currentDate} 
                 onAddTransaction={addTransaction}
@@ -322,6 +303,7 @@ const App: React.FC = () => {
             </div>
           )}
 
+          {/* ... OUTRAS TABS IGUAIS ... */}
           {activeTab === 'market' && (
             <div className="w-full pb-24 lg:pb-0">
               {monthSelector}
@@ -352,7 +334,7 @@ const App: React.FC = () => {
             <div className="w-full max-w-5xl mx-auto pb-24 lg:pb-0">
               {monthSelector}
               <History 
-                transactions={monthlyTransactions} // O EXTRATO USA ISSO AQUI! AGORA VAI APARECER!
+                transactions={monthlyTransactions} // AGORA SIM: Lista só o que é daquele mês
                 onAddTransaction={addTransaction}
                 onUpdateTransaction={updateTransaction}
                 onDeleteTransaction={deleteTransaction}
@@ -364,7 +346,6 @@ const App: React.FC = () => {
         </div>
       </div>
       
-      {/* ... MODAIS E CONFIGURAÇÕES ... */}
       <CategoryManagerModal isOpen={isCatManagerOpen} onClose={() => setIsCatManagerOpen(false)} categories={categories} onRename={() => {}} onDelete={async (name) => { if (confirm(`Excluir categoria "${name}"?`)) { const q = query(collection(db, "categories"), where("uid", "==", currentUser.id), where("name", "==", name)); const snap = await getDocs(q); snap.docs.forEach(d => deleteDoc(d.ref)); }}} />
       
       {isSettingsOpen && (
