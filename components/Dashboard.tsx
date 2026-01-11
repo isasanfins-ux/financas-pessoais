@@ -48,7 +48,13 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [calibrationValue, setCalibrationValue] = useState('');
 
   const PAYMENT_CATEGORY = "Pagamento de Fatura";
-  const currentInvoiceMonth = currentDate.toISOString().slice(0, 7);
+  
+  // Datas de referência
+  const currentInvoiceMonth = currentDate.toISOString().slice(0, 7); // Ex: 2026-01
+  
+  const nextDate = new Date(currentDate);
+  nextDate.setMonth(nextDate.getMonth() + 1);
+  const nextInvoiceMonth = nextDate.toISOString().slice(0, 7); // Ex: 2026-02
 
   const categoryData = useMemo(() => {
     const expenses = transactions.filter(t => 
@@ -73,23 +79,33 @@ const Dashboard: React.FC<DashboardProps> = ({
   }, [transactions]);
 
   const stats = useMemo(() => {
-    // --- LÓGICA DE FATURA HÍBRIDA (MANUAL + AUTOMÁTICA) ---
-    const belongsToCurrentInvoice = (t: Transaction) => {
-      if (t.invoiceMonth) {
-        return t.invoiceMonth === currentInvoiceMonth;
-      }
-      // Fallback matemático
-      const [y, m, d] = t.date.split('-').map(Number);
-      let targetMonth = m;
-      let targetYear = y;
-      if (d > closingDay) {
-        targetMonth++;
-        if (targetMonth > 12) { targetMonth = 1; targetYear++; }
-      }
-      const calculatedInvoice = `${targetYear}-${String(targetMonth).padStart(2, '0')}`;
-      return calculatedInvoice === currentInvoiceMonth;
+    // --- LÓGICA DE CÁLCULO DA FATURA ---
+    const getInvoiceTotal = (targetMonth: string) => {
+      return allTransactions
+        .filter(t => {
+          if (t.type !== TransactionType.EXPENSE || t.paymentMethod !== PaymentMethod.CREDIT_CARD) return false;
+          
+          // 1. Respeita etiqueta manual
+          if (t.invoiceMonth) return t.invoiceMonth === targetMonth;
+
+          // 2. Cálculo automático
+          const [y, m, d] = t.date.split('-').map(Number);
+          let tm = m;
+          let ty = y;
+          if (d > closingDay) {
+            tm++;
+            if (tm > 12) { tm = 1; ty++; }
+          }
+          const calc = `${ty}-${String(tm).padStart(2, '0')}`;
+          return calc === targetMonth;
+        })
+        .reduce((acc, curr) => acc + curr.amount, 0);
     };
 
+    const currentInvoiceTotal = getInvoiceTotal(currentInvoiceMonth);
+    const nextInvoiceTotal = getInvoiceTotal(nextInvoiceMonth);
+
+    // Cálculos gerais
     const receitas = transactions
       .filter(t => t.type === TransactionType.INCOME)
       .reduce((acc, curr) => acc + curr.amount, 0);
@@ -98,27 +114,28 @@ const Dashboard: React.FC<DashboardProps> = ({
       .filter(t => t.type === TransactionType.EXPENSE && t.paymentMethod !== PaymentMethod.CREDIT_CARD)
       .reduce((acc, curr) => acc + curr.amount, 0);
 
-    const faturaNovosGastos = allTransactions
-      .filter(t => 
-        t.type === TransactionType.EXPENSE && 
-        t.paymentMethod === PaymentMethod.CREDIT_CARD &&
-        belongsToCurrentInvoice(t)
-      )
-      .reduce((acc, curr) => acc + curr.amount, 0);
-
     const pagamentosFatura = transactions
       .filter(t => t.category === PAYMENT_CATEGORY)
       .reduce((acc, curr) => acc + curr.amount, 0);
 
-    const faturaTotal = (initialCreditBill + faturaNovosGastos) - pagamentosFatura;
-    const despesasConta = immediateExpenses - pagamentosFatura;
-    const totalGeralGastos = despesasConta + faturaNovosGastos;
+    // Fatura Atual Líquida (Gastos - Pagamentos)
+    const faturaAtualLiquida = Math.max(0, (initialCreditBill + currentInvoiceTotal) - pagamentosFatura);
+
+    // Para o limite, consideramos uma estimativa de uso total
+    // (Fatura Atual + Próxima + Inicial - Pagos)
+    const totalCreditUsed = (initialCreditBill + currentInvoiceTotal + nextInvoiceTotal) - pagamentosFatura; 
     
-    const cardExpenses = allTransactions
+    // Lista para exibir (apenas fatura atual)
+    const cardExpensesCurrent = allTransactions
       .filter(t => 
         t.type === TransactionType.EXPENSE && 
         t.paymentMethod === PaymentMethod.CREDIT_CARD &&
-        belongsToCurrentInvoice(t)
+        (t.invoiceMonth === currentInvoiceMonth || (!t.invoiceMonth && (() => {
+           const [y, m, d] = t.date.split('-').map(Number);
+           let tm = m, ty = y;
+           if (d > closingDay) { tm++; if(tm>12){tm=1;ty++} }
+           return `${ty}-${String(tm).padStart(2, '0')}` === currentInvoiceMonth;
+        })()))
       )
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
       .slice(0, 3);
@@ -127,14 +144,16 @@ const Dashboard: React.FC<DashboardProps> = ({
       saldo: initialBalance + receitas - immediateExpenses,
       receitas,
       despesasConta,
-      totalGeralGastos,
-      fatura: Math.max(0, faturaTotal),
+      totalGeralGastos: immediateExpenses + currentInvoiceTotal,
+      faturaAtual: faturaAtualLiquida,
+      faturaProxima: nextInvoiceTotal,
       limiteTotal: totalCreditLimit,
-      cardExpenses
+      totalCreditUsed,
+      cardExpenses: cardExpensesCurrent
     };
-  }, [transactions, allTransactions, initialBalance, initialCreditBill, totalCreditLimit, currentInvoiceMonth, closingDay]);
+  }, [transactions, allTransactions, initialBalance, initialCreditBill, totalCreditLimit, currentInvoiceMonth, nextInvoiceMonth, closingDay]);
 
-  const progressPercentage = (stats.fatura / stats.limiteTotal) * 100;
+  const progressPercentage = (stats.totalCreditUsed / stats.limiteTotal) * 100;
 
   const categoryTransactions = useMemo(() => {
     if (!selectedCategory) return [];
@@ -184,31 +203,21 @@ const Dashboard: React.FC<DashboardProps> = ({
     onAddTransaction(paymentTransaction);
     setCalibrationValue('');
     setIsPayingBill(false);
-    alert("Pagamento registrado! Ele aparecerá no seu Extrato. ✨");
+    alert("Pagamento registrado! ✨");
   };
 
   const openBalanceCalibration = () => { setCalibrationValue(stats.saldo.toFixed(2)); setIsBalanceCalibrating(true); };
-  const openCreditCalibration = () => { setCalibrationValue(stats.fatura.toFixed(2)); setIsCreditCalibrating(true); };
+  const openCreditCalibration = () => { setCalibrationValue(stats.faturaAtual.toFixed(2)); setIsCreditCalibrating(true); };
   const openLimitCalibration = () => { setCalibrationValue(totalCreditLimit.toString()); setIsLimitCalibrating(true); };
 
-  // --- A MÁGICA DA CALIBRAÇÃO INTELIGENTE ✨ ---
   const saveCalibration = () => {
     const val = parseFloat(calibrationValue.replace(',', '.')) || 0;
-
     if (isBalanceCalibrating) {
-      // Calcula o "movimento líquido" do mês (tudo que entrou menos tudo que saiu)
       const currentNetMovement = stats.saldo - initialBalance;
-      // Define o novo saldo inicial para que o resultado final seja exatamente o que você digitou
-      const newInitial = val - currentNetMovement;
-      onUpdateInitialBalance(newInitial);
+      onUpdateInitialBalance(val - currentNetMovement);
     }
-    
-    if (isCreditCalibrating) {
-       onUpdateInitialCreditBill(val);
-    }
-
+    if (isCreditCalibrating) onUpdateInitialCreditBill(val);
     if (isLimitCalibrating) onUpdateTotalCreditLimit(val);
-
     setCalibrationValue('');
     setIsBalanceCalibrating(false);
     setIsCreditCalibrating(false);
@@ -216,35 +225,27 @@ const Dashboard: React.FC<DashboardProps> = ({
   };
 
   const StatCard = ({ title, value, color, bgColor = 'white', textColor = '#521256', onClick }: any) => (
-    <div 
-      onClick={onClick}
-      className={`p-6 rounded-[2rem] shadow-xl shadow-[#521256]/5 border border-white/40 flex flex-col justify-between transition-all group ${onClick ? 'cursor-pointer hover:scale-[1.02] active:scale-95' : ''}`} 
-      style={{ backgroundColor: bgColor }}
-    >
+    <div onClick={onClick} className={`p-6 rounded-[2rem] shadow-xl shadow-[#521256]/5 border border-white/40 flex flex-col justify-between transition-all group ${onClick ? 'cursor-pointer hover:scale-[1.02] active:scale-95' : ''}`} style={{ backgroundColor: bgColor }}>
       <div className="flex justify-between items-start">
         <span className="text-[10px] uppercase tracking-widest font-black opacity-50" style={{ color: textColor }}>{title}</span>
-        {onClick && (
-          <span className="opacity-0 group-hover:opacity-40 transition-opacity">
-            <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" /></svg>
-          </span>
-        )}
+        {onClick && <span className="opacity-0 group-hover:opacity-40 transition-opacity"><svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" /></svg></span>}
       </div>
-      <h3 className="text-2xl font-black mt-2 tracking-tight" style={{ color: color || textColor }}>
-        R$ {value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-      </h3>
+      <h3 className="text-2xl font-black mt-2 tracking-tight" style={{ color: color || textColor }}>R$ {value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</h3>
     </div>
   );
 
   return (
     <div className="space-y-8 animate-in fade-in duration-700 pb-10">
+      {/* Cards Superiores */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6">
         <StatCard title="Saldo Disponível" value={stats.saldo} bgColor={COLORS.BASE} onClick={openBalanceCalibration} />
         <StatCard title="Receitas do Mês 🤩" value={stats.receitas} bgColor="#e2e585" textColor="#521256" />
         <StatCard title="Saídas (Débito) 🔻" value={stats.despesasConta} color="#ef4444" />
-        <StatCard title={`Fatura ${currentDate.toLocaleDateString('pt-BR', {month: 'long'})} 💳`} value={stats.fatura} onClick={openCreditCalibration} />
+        <StatCard title="Total no Cartão 💳" value={stats.faturaAtual} onClick={openCreditCalibration} />
         <StatCard title="Despesas Totais 💰" value={stats.totalGeralGastos} color="#ef4444" />
       </div>
 
+      {/* Botões de Ação */}
       <div className="flex flex-wrap gap-4 items-center">
         <button onClick={() => handleOpenModal(TransactionType.INCOME)} className="flex items-center gap-3 px-8 py-4 bg-[#e2e585] text-[#521256] rounded-full font-black text-sm shadow-lg shadow-[#e2e585]/20 hover:scale-105 active:scale-95 transition-all">
           <span className="text-xl">+</span> Nova Receita
@@ -255,57 +256,80 @@ const Dashboard: React.FC<DashboardProps> = ({
         </button>
       </div>
 
-      <div className="bg-white rounded-[2.5rem] p-8 lg:p-12 shadow-2xl shadow-[#521256]/10 border border-white/20">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-8">
-          <div className="flex-1">
-            <h3 className="text-2xl font-black text-[#521256] mb-1">Gestão de Fatura ✨</h3>
-            <p className="text-sm font-semibold opacity-60">Visualizando fatura de <span className="text-[#f170c3] uppercase font-bold">{currentDate.toLocaleDateString('pt-BR', {month: 'long', year: 'numeric'})}</span></p>
-          </div>
-          <div className="text-right">
-            <span className="text-xs font-black opacity-40 uppercase tracking-tighter">Limite Disponível</span>
-            <p className="text-2xl font-black text-[#521256]">R$ {(stats.limiteTotal - stats.fatura).toLocaleString('pt-BR')}</p>
-          </div>
+      {/* --- ÁREA DE GESTÃO DE FATURA DIVIDIDA --- */}
+      <div className="bg-white rounded-[2.5rem] p-8 lg:p-10 shadow-2xl shadow-[#521256]/10 border border-white/20">
+        
+        <div className="flex justify-between items-center mb-6">
+           <h3 className="text-2xl font-black text-[#521256]">Gestão de Fatura ✨</h3>
+           <div className="text-right">
+             <span className="text-[10px] font-black opacity-40 uppercase tracking-widest block">Limite Disponível</span>
+             <button onClick={openLimitCalibration} className="text-xl font-black text-[#521256] hover:text-[#f170c3] transition-colors">
+               R$ {(stats.limiteTotal - stats.totalCreditUsed).toLocaleString('pt-BR')}
+             </button>
+           </div>
         </div>
 
-        <div className="mb-10">
-          <div className="flex justify-between items-end mb-3">
-            <span className="text-xs font-black text-[#f170c3] uppercase">Limite Utilizado ({progressPercentage.toFixed(0)}%)</span>
-            <div className="flex gap-4 items-center">
-              <button onClick={() => setIsPayingBill(true)} className="text-[10px] bg-[#521256] text-white px-3 py-1.5 rounded-full font-black hover:scale-105 transition-all shadow-md">PAGAR FATURA</button>
-              <button onClick={openLimitCalibration} className="flex items-center gap-1 text-xs font-bold text-[#521256]/40 hover:text-[#521256] transition-colors group">
-                R$ {stats.limiteTotal.toLocaleString('pt-BR')} total
-                <svg className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" fill="currentColor" viewBox="0 0 20 20"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" /></svg>
-              </button>
+        {/* OS DOIS CARDS DE FATURA */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+            {/* Card ESQUERDA: Mês Atual */}
+            <div className="bg-[#efd2fe]/20 p-6 rounded-[2rem] border border-[#efd2fe] relative overflow-hidden group">
+                <div className="absolute top-0 right-0 bg-[#f170c3] text-white text-[10px] font-black px-3 py-1 rounded-bl-xl">ATUAL</div>
+                <p className="text-[10px] font-black opacity-50 uppercase tracking-widest mb-1">Vence em {currentDate.toLocaleDateString('pt-BR', {month: 'long'}).toUpperCase()}</p>
+                <h2 className="text-3xl font-black text-[#521256] mb-4">R$ {stats.faturaAtual.toLocaleString('pt-BR')}</h2>
+                <div className="flex items-center gap-2">
+                   <button onClick={() => setIsPayingBill(true)} className="flex-1 bg-[#521256] text-white py-3 rounded-xl font-black text-xs hover:scale-[1.02] active:scale-95 transition-all shadow-lg">
+                     PAGAR FATURA
+                   </button>
+                   <button onClick={openCreditCalibration} className="px-3 py-3 bg-white rounded-xl text-[#521256] hover:bg-[#efd2fe] transition-colors">
+                     ⚙️
+                   </button>
+                </div>
             </div>
+
+            {/* Card DIREITA: Próximo Mês */}
+            <div className="bg-white p-6 rounded-[2rem] border-2 border-dashed border-[#efd2fe] relative opacity-80 hover:opacity-100 transition-opacity">
+                <div className="absolute top-0 right-0 bg-[#a3e635] text-[#1a2e05] text-[10px] font-black px-3 py-1 rounded-bl-xl">PRÓXIMA</div>
+                <p className="text-[10px] font-black opacity-40 uppercase tracking-widest mb-1">Vence em {nextDate.toLocaleDateString('pt-BR', {month: 'long'}).toUpperCase()}</p>
+                <h2 className="text-3xl font-black text-[#521256]/60 mb-1">R$ {stats.faturaProxima.toLocaleString('pt-BR')}</h2>
+                <p className="text-[10px] font-bold text-[#f170c3]">Acumulado até agora</p>
+            </div>
+        </div>
+
+        {/* Barra de Progresso Global */}
+        <div className="mb-8">
+          <div className="flex justify-between items-end mb-2">
+            <span className="text-[10px] font-black text-[#f170c3] uppercase tracking-widest">Limite Total Utilizado ({progressPercentage.toFixed(0)}%)</span>
+            <span className="text-[10px] font-bold opacity-40">Total: R$ {stats.limiteTotal.toLocaleString('pt-BR')}</span>
           </div>
-          <div className="w-full h-6 bg-[#efd2fe]/40 rounded-full overflow-hidden p-1 shadow-inner border border-[#efd2fe]">
-            <div className="h-full bg-gradient-to-r from-[#f170c3] to-[#521256] rounded-full transition-all duration-1000 ease-out shadow-lg" style={{ width: `${Math.min(progressPercentage, 100)}%` }}></div>
+          <div className="w-full h-4 bg-[#efd2fe]/40 rounded-full overflow-hidden p-0.5 shadow-inner">
+            <div className="h-full bg-gradient-to-r from-[#f170c3] to-[#521256] rounded-full transition-all duration-1000 ease-out shadow-sm" style={{ width: `${Math.min(progressPercentage, 100)}%` }}></div>
           </div>
         </div>
 
+        {/* Últimas Transações (Do Mês Atual) */}
         <div>
-          <h4 className="text-xs font-black text-[#521256] opacity-40 uppercase tracking-widest mb-4">Últimas desta Fatura</h4>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <h4 className="text-[10px] font-black text-[#521256] opacity-40 uppercase tracking-widest mb-4">Últimas desta Fatura (Janeiro)</h4>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {stats.cardExpenses.map((t) => (
-              <div key={t.id} className="bg-[#efd2fe]/30 p-5 rounded-2xl border border-white/50 flex items-center justify-between hover:bg-white transition-colors cursor-pointer group">
+              <div key={t.id} className="bg-[#efd2fe]/30 p-4 rounded-2xl border border-white/50 flex items-center justify-between hover:bg-white transition-colors cursor-pointer group">
                 <div className="flex items-center gap-3">
-                   <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center text-xl shadow-sm">💳</div>
-                   <div>
-                     <p className="text-sm font-black text-[#521256] line-clamp-1">{t.description}</p>
-                     <p className="text-xs font-bold opacity-50">{new Date(t.date).toLocaleDateString('pt-BR')}</p>
+                   <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center text-lg shadow-sm">💳</div>
+                   <div className="overflow-hidden">
+                     <p className="text-xs font-black text-[#521256] truncate">{t.description}</p>
+                     <p className="text-[9px] font-bold opacity-50">{new Date(t.date).toLocaleDateString('pt-BR')}</p>
                    </div>
                 </div>
-                <span className="text-sm font-black text-[#521256] group-hover:text-[#f170c3]">R$ {t.amount.toLocaleString('pt-BR')}</span>
+                <span className="text-xs font-black text-[#521256] group-hover:text-[#f170c3]">R$ {t.amount.toLocaleString('pt-BR')}</span>
               </div>
             ))}
-            {stats.cardExpenses.length === 0 && (<p className="col-span-3 text-center py-4 text-xs font-bold opacity-30 italic">Nenhum gasto nesta fatura ainda.</p>)}
+            {stats.cardExpenses.length === 0 && (<p className="col-span-3 text-center py-2 text-xs font-bold opacity-30 italic">Nenhum gasto nesta fatura ainda.</p>)}
           </div>
         </div>
       </div>
 
       <div className="grid grid-cols-1 gap-8">
         <div className="bg-white/70 rounded-[2.5rem] p-10 shadow-xl shadow-[#521256]/5 border border-white/40">
-          <h3 className="text-xl font-black text-[#521256] mb-8 flex items-center justify-between">Análise por Categoria (Data da Compra) <span>🔎</span></h3>
+          <h3 className="text-xl font-black text-[#521256] mb-8 flex items-center justify-between">Análise por Categoria <span>🔎</span></h3>
           <div className="flex flex-col lg:flex-row items-center gap-8 lg:gap-12">
             <div className="h-[300px] w-full lg:w-1/2">
               <ResponsiveContainer width="100%" height="100%">
@@ -364,10 +388,10 @@ const Dashboard: React.FC<DashboardProps> = ({
         <div className="fixed inset-0 bg-[#521256]/60 backdrop-blur-md z-[150] flex items-center justify-center p-4 animate-in fade-in duration-200">
           <div className="bg-white rounded-[2.5rem] w-full max-w-sm p-10 shadow-2xl animate-in zoom-in duration-300">
             <h3 className="text-xl font-black text-[#521256] mb-2 text-center">
-              {isPayingBill ? 'Pagar Fatura 💳' : (isLimitCalibrating ? 'Definir Limite' : 'Calibrar ' + (isBalanceCalibrating ? 'Saldo' : 'Fatura')) + ' ✨'}
+              {isPayingBill ? 'Pagar Fatura 💳' : (isLimitCalibrating ? 'Definir Limite Total' : 'Calibrar ' + (isBalanceCalibrating ? 'Saldo' : 'Fatura Atual')) + ' ✨'}
             </h3>
              <p className="text-xs font-bold text-[#521256]/40 mb-8 text-center uppercase tracking-widest">
-              {isPayingBill ? 'Quanto você vai pagar/antecipar?' : (isLimitCalibrating ? 'Qual é o limite somado dos cartões?' : (isBalanceCalibrating ? 'Saldo real atual?' : 'Gasto atual na fatura?'))}
+              {isPayingBill ? 'Quanto você vai pagar/antecipar?' : (isLimitCalibrating ? 'Qual é o limite somado dos cartões?' : (isBalanceCalibrating ? 'Saldo real atual?' : 'Valor real da fatura de ' + currentDate.toLocaleDateString('pt-BR', {month: 'long'}) + '?'))}
             </p>
             <div className="mb-8">
               <label className="text-[10px] font-black text-[#521256]/50 uppercase tracking-[0.2em] mb-2 block">Valor em R$</label>
