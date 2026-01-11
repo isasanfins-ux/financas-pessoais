@@ -37,7 +37,8 @@ const App: React.FC = () => {
 
   // --- O FILTRO "CALENDÁRIO PURO" (CORRIGIDO) ---
   // Aqui voltamos ao básico: Se a data é de Janeiro, mostra em Janeiro.
-  // A inteligência da fatura fica SÓ no Dashboard, não aqui na lista.
+  // Isso conserta o Gráfico e o Extrato.
+  // A inteligência da fatura fica SÓ no Dashboard (Card Roxo), usando o allTransactions.
   const monthlyTransactions = useMemo(() => {
     return allTransactions.filter(t => {
       const tDate = new Date(t.date + 'T12:00:00');
@@ -334,7 +335,7 @@ const App: React.FC = () => {
             <div className="w-full max-w-5xl mx-auto pb-24 lg:pb-0">
               {monthSelector}
               <History 
-                transactions={monthlyTransactions} // AGORA SIM: Lista só o que é daquele mês
+                transactions={monthlyTransactions} // Lista fiel ao calendário
                 onAddTransaction={addTransaction}
                 onUpdateTransaction={updateTransaction}
                 onDeleteTransaction={deleteTransaction}
