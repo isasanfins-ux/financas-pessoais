@@ -6,7 +6,8 @@ export enum TransactionType {
 export enum PaymentMethod {
   CREDIT_CARD = 'Cartão de Crédito',
   DEBIT = 'Débito/Conta Corrente',
-  CASH = 'Dinheiro'
+  CASH = 'Dinheiro',
+  PIX = 'Pix' // Adicionei o Pix aqui caso precise, se não usar pode tirar
 }
 
 export interface User {
@@ -24,9 +25,10 @@ export interface Transaction {
   category: string;
   type: TransactionType;
   paymentMethod: PaymentMethod;
+  cardType?: 'Nubank' | 'Porto'; // <--- A ÚNICA MUDANÇA REAL É ESSA LINHA AQUI
   isRecurring: boolean;
   date: string;
-  invoiceMonth?: string; // <--- NOVO: Formato 'YYYY-MM' (Ex: '2026-01')
+  invoiceMonth?: string; 
 }
 
 export interface CategoryBudget {
