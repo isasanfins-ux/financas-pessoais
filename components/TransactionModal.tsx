@@ -10,94 +10,101 @@ interface TransactionModalProps {
   initialData?: Transaction | null;
   onAddCategory?: (name: string) => void;
   onOpenCategoryManager?: () => void;
-  closingDay?: number; // <--- Recebe o dia de fechamento para calcular automático
+  closingDay?: number;
 }
 
 const TransactionModal: React.FC<TransactionModalProps> = ({ 
-  isOpen, 
-  onClose, 
-  onSave, 
-  type,
-  availableCategories,
-  initialData, 
-  onOpenCategoryManager,
-  closingDay = 1 // Padrão dia 1 se não tiver configurado
+  isOpen, onClose, onSave, type, availableCategories, initialData, onAddCategory, onOpenCategoryManager, closingDay = 6 
 }) => {
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
   const [category, setCategory] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(PaymentMethod.DEBIT);
-  const [isRecurring, setIsRecurring] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(PaymentMethod.PIX); // Default PIX
   
-  // Novo estado para a Fatura de Referência
+  // --- NOVOS CAMPOS ---
+  const [cardType, setCardType] = useState<'Nubank' | 'Porto'>('Nubank'); // Default Nubank
+  const [isRecurring, setIsRecurring] = useState(false);
   const [invoiceMonth, setInvoiceMonth] = useState('');
+  const [newCategory, setNewCategory] = useState('');
+  const [isAddingCategory, setIsAddingCategory] = useState(false);
 
-  // Função inteligente para calcular a fatura sugerida
+  // Função inteligente para calcular a fatura
   const calculateInvoiceMonth = (purchaseDate: string) => {
     const pDate = new Date(purchaseDate + 'T12:00:00');
     const day = pDate.getDate();
-    
     // Se comprou DEPOIS do fechamento, joga para o próximo mês
     if (day > closingDay) {
       pDate.setMonth(pDate.getMonth() + 1);
     }
-    return pDate.toISOString().slice(0, 7); // Retorna 'YYYY-MM'
+    return pDate.toISOString().slice(0, 7); // 'YYYY-MM'
   };
 
   useEffect(() => {
     if (isOpen) {
       if (initialData) {
+        // MODO EDIÇÃO
         setDescription(initialData.description);
         setAmount(initialData.amount.toString());
         setCategory(initialData.category);
         setDate(initialData.date);
-        setPaymentMethod(initialData.paymentMethod || PaymentMethod.DEBIT);
+        setPaymentMethod(initialData.paymentMethod);
         setIsRecurring(initialData.isRecurring || false);
         setInvoiceMonth(initialData.invoiceMonth || calculateInvoiceMonth(initialData.date));
+        if (initialData.cardType) setCardType(initialData.cardType); // Recupera o cartão salvo
       } else {
+        // MODO NOVO
         setDescription('');
         setAmount('');
         setCategory('');
         const today = new Date().toISOString().split('T')[0];
         setDate(today);
-        setPaymentMethod(PaymentMethod.DEBIT);
+        setPaymentMethod(PaymentMethod.PIX); // Começa como PIX
         setIsRecurring(false);
         setInvoiceMonth(calculateInvoiceMonth(today));
+        setCardType('Nubank'); // Default
       }
     }
   }, [isOpen, initialData, closingDay]);
 
-  // Atualiza a fatura sugerida se mudar a data da compra (e não for edição)
+  // Atualiza fatura sugerida ao mudar data
   useEffect(() => {
     if (!initialData && date) {
        setInvoiceMonth(calculateInvoiceMonth(date));
     }
   }, [date, closingDay]);
 
-  if (!isOpen) return null;
-
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!description || !amount || !category) return;
-
     onSave({
       description,
       amount: parseFloat(amount.replace(',', '.')),
       category,
       type,
-      paymentMethod: type === TransactionType.EXPENSE ? paymentMethod : undefined,
+      paymentMethod,
+      // Salva o cartão APENAS se for crédito
+      cardType: (type === TransactionType.EXPENSE && paymentMethod === PaymentMethod.CREDIT_CARD) ? cardType : undefined,
       date,
       isRecurring,
-      // Só salva invoiceMonth se for cartão de crédito
       invoiceMonth: (type === TransactionType.EXPENSE && paymentMethod === PaymentMethod.CREDIT_CARD) ? invoiceMonth : undefined
     });
     onClose();
   };
 
+  const handleAddCategory = () => {
+    if (newCategory && onAddCategory) {
+      onAddCategory(newCategory);
+      setCategory(newCategory);
+      setNewCategory('');
+      setIsAddingCategory(false);
+    }
+  };
+
+  if (!isOpen) return null;
+
   return (
     <div className="fixed inset-0 bg-[#521256]/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200">
-      <div className="bg-white rounded-[2.5rem] w-full max-w-md p-8 shadow-2xl animate-in zoom-in duration-300">
+      <div className="bg-white rounded-[2.5rem] w-full max-w-md p-8 shadow-2xl animate-in zoom-in duration-300 max-h-[90vh] overflow-y-auto">
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-2xl font-black text-[#521256]">
             {initialData ? 'Editar Lançamento ✏️' : (type === TransactionType.INCOME ? 'Nova Receita 🤑' : 'Nova Despesa 💸')}
@@ -110,102 +117,97 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="text-[10px] font-black opacity-40 uppercase tracking-widest ml-1">Descrição</label>
-            <input 
-              autoFocus={!initialData} 
-              type="text" 
-              value={description} 
-              onChange={e => setDescription(e.target.value)} 
-              placeholder={type === TransactionType.INCOME ? "Ex: Salário, Freela..." : "Ex: Mercado, Uber..."}
-              className="w-full px-4 py-3 bg-[#efd2fe]/30 rounded-xl font-bold text-[#521256] focus:outline-none focus:ring-2 focus:ring-[#f170c3]"
-            />
+            <input autoFocus={!initialData} type="text" value={description} onChange={e => setDescription(e.target.value)} placeholder="Ex: Mercado, Uber..." className="w-full px-4 py-3 bg-[#efd2fe]/30 rounded-xl font-bold text-[#521256] focus:outline-none focus:ring-2 focus:ring-[#f170c3]" />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="text-[10px] font-black opacity-40 uppercase tracking-widest ml-1">Valor (R$)</label>
-              <input 
-                type="number" 
-                value={amount} 
-                onChange={e => setAmount(e.target.value)} 
-                placeholder="0,00" 
-                className="w-full px-4 py-3 bg-[#efd2fe]/30 rounded-xl font-bold text-[#521256] focus:outline-none focus:ring-2 focus:ring-[#f170c3]"
-              />
+              <input type="number" value={amount} onChange={e => setAmount(e.target.value)} placeholder="0,00" className="w-full px-4 py-3 bg-[#efd2fe]/30 rounded-xl font-bold text-[#521256] focus:outline-none focus:ring-2 focus:ring-[#f170c3]" />
             </div>
             <div>
-              <label className="text-[10px] font-black opacity-40 uppercase tracking-widest ml-1">Data da Compra</label>
-              <input 
-                type="date" 
-                value={date} 
-                onChange={e => setDate(e.target.value)} 
-                className="w-full px-4 py-3 bg-[#efd2fe]/30 rounded-xl font-bold text-[#521256] focus:outline-none focus:ring-2 focus:ring-[#f170c3]"
-              />
+              <label className="text-[10px] font-black opacity-40 uppercase tracking-widest ml-1">Data</label>
+              <input type="date" value={date} onChange={e => setDate(e.target.value)} className="w-full px-4 py-3 bg-[#efd2fe]/30 rounded-xl font-bold text-[#521256] focus:outline-none focus:ring-2 focus:ring-[#f170c3]" />
             </div>
           </div>
 
           {type === TransactionType.EXPENSE && (
             <div>
-              <label className="text-[10px] font-black opacity-40 uppercase tracking-widest ml-1">Forma de Pagamento</label>
-              <select 
-                value={paymentMethod} 
-                onChange={(e) => setPaymentMethod(e.target.value as PaymentMethod)}
-                className="w-full px-4 py-3 bg-[#efd2fe]/30 rounded-xl font-bold text-[#521256] text-sm focus:outline-none focus:ring-2 focus:ring-[#f170c3]"
-              >
-                <option value={PaymentMethod.DEBIT}>Débito / PIX</option>
-                <option value={PaymentMethod.CREDIT_CARD}>Cartão de Crédito</option>
-                <option value={PaymentMethod.CASH}>Dinheiro</option>
+              <label className="text-[10px] font-black opacity-40 uppercase tracking-widest ml-1">Pagamento</label>
+              <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value as PaymentMethod)} className="w-full px-4 py-3 bg-[#efd2fe]/30 rounded-xl font-bold text-[#521256] text-sm focus:outline-none focus:ring-2 focus:ring-[#f170c3]">
+                {Object.values(PaymentMethod).map(m => <option key={m} value={m}>{m}</option>)}
               </select>
             </div>
           )}
 
-          {/* CAMPO DE FATURA - SÓ APARECE SE FOR CARTÃO DE CRÉDITO */}
+          {/* --- SELEÇÃO DE CARTÃO (AQUI ESTÁ A MÁGICA) --- */}
           {type === TransactionType.EXPENSE && paymentMethod === PaymentMethod.CREDIT_CARD && (
-            <div className="bg-[#fbbf24]/10 p-3 rounded-xl border border-[#fbbf24]/30 animate-in slide-in-from-top-2">
-              <label className="text-[10px] font-black text-[#d97706] uppercase tracking-widest ml-1 block mb-1">Fatura de Referência 📅</label>
-              <div className="flex gap-2 items-center">
-                 <input 
-                   type="month" 
-                   value={invoiceMonth}
-                   onChange={(e) => setInvoiceMonth(e.target.value)}
-                   className="w-full px-4 py-2 bg-white rounded-lg font-bold text-[#521256] focus:outline-none focus:ring-2 focus:ring-[#fbbf24]"
-                 />
-                 <div className="text-[10px] text-[#d97706] font-bold leading-tight max-w-[120px]">
-                   Esta compra será paga na fatura de {new Date(invoiceMonth + '-02').toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}
-                 </div>
-              </div>
-            </div>
+             <div className="bg-[#efd2fe]/40 p-4 rounded-xl animate-in slide-in-from-top-2 border border-[#f170c3]/20">
+                <label className="text-[10px] font-black text-[#521256]/60 uppercase tracking-widest mb-2 block">Qual Cartão?</label>
+                <div className="flex gap-3 mb-4">
+                    <button 
+                        type="button" 
+                        onClick={() => setCardType('Nubank')}
+                        className={`flex-1 py-3 rounded-xl font-black text-xs transition-all flex items-center justify-center gap-2 ${cardType === 'Nubank' ? 'bg-[#820ad1] text-white shadow-lg scale-105 ring-2 ring-[#820ad1] ring-offset-1' : 'bg-white text-[#820ad1] border border-[#820ad1]/20 hover:bg-[#820ad1]/10'}`}
+                    >
+                        <span className="text-lg">🟣</span> Nubank
+                    </button>
+                    <button 
+                        type="button" 
+                        onClick={() => setCardType('Porto')}
+                        className={`flex-1 py-3 rounded-xl font-black text-xs transition-all flex items-center justify-center gap-2 ${cardType === 'Porto' ? 'bg-[#00a1fc] text-white shadow-lg scale-105 ring-2 ring-[#00a1fc] ring-offset-1' : 'bg-white text-[#00a1fc] border border-[#00a1fc]/20 hover:bg-[#00a1fc]/10'}`}
+                    >
+                        <span className="text-lg">🔵</span> Porto
+                    </button>
+                </div>
+
+                <label className="text-[10px] font-black text-[#521256]/60 uppercase tracking-widest mb-1 block">Fatura de Referência</label>
+                <div className="flex items-center gap-2 bg-white p-2 rounded-lg border border-[#f170c3]/30">
+                    <input 
+                        type="month" 
+                        value={invoiceMonth} 
+                        onChange={(e) => setInvoiceMonth(e.target.value)}
+                        className="flex-1 bg-transparent font-bold text-[#521256] focus:outline-none text-sm"
+                    />
+                    <span className="text-xs text-[#521256]/40 font-bold">📅</span>
+                </div>
+             </div>
           )}
 
           <div>
             <div className="flex justify-between items-center mb-1">
-              <label className="text-[10px] font-black opacity-40 uppercase tracking-widest ml-1">Categoria</label>
-              <button type="button" onClick={onOpenCategoryManager} className="text-[9px] font-bold text-[#f170c3] hover:underline">Gerenciar</button>
+                <label className="text-[10px] font-black opacity-40 uppercase tracking-widest ml-1">Categoria</label>
+                <div className="flex gap-2">
+                    <button type="button" onClick={() => setIsAddingCategory(!isAddingCategory)} className="text-[10px] font-bold text-[#f170c3] hover:underline">+ Criar</button>
+                    {onOpenCategoryManager && <button type="button" onClick={onOpenCategoryManager} className="text-[10px] font-bold text-[#521256] hover:underline">Gerenciar</button>}
+                </div>
             </div>
-            <select 
-              value={category} 
-              onChange={(e) => setCategory(e.target.value)}
-              className="w-full px-4 py-3 bg-[#efd2fe]/30 rounded-xl font-bold text-[#521256] text-sm focus:outline-none focus:ring-2 focus:ring-[#f170c3]"
-            >
-              <option value="">Selecione...</option>
-              {availableCategories.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
+            {isAddingCategory ? (
+                <div className="flex gap-2">
+                    <input type="text" value={newCategory} onChange={(e) => setNewCategory(e.target.value)} className="flex-1 px-4 py-3 bg-[#efd2fe]/30 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#f170c3] text-[#521256] font-bold text-sm" placeholder="Nome da categoria..." autoFocus />
+                    <button type="button" onClick={handleAddCategory} className="bg-[#f170c3] text-white px-4 rounded-xl font-bold text-sm shadow-md">OK</button>
+                </div>
+            ) : (
+                <select required value={category} onChange={(e) => setCategory(e.target.value)} className="w-full px-4 py-3 bg-[#efd2fe]/30 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#f170c3] text-[#521256] font-bold appearance-none">
+                <option value="">Selecione...</option>
+                {availableCategories.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+            )}
           </div>
 
           {!initialData && (
-            <div className="flex items-center gap-3 bg-[#efd2fe]/20 p-3 rounded-xl border border-[#efd2fe] mt-2">
-              <div 
-                onClick={() => setIsRecurring(!isRecurring)}
-                className={`w-10 h-6 flex items-center rounded-full p-1 cursor-pointer transition-colors duration-300 ${isRecurring ? 'bg-[#f170c3]' : 'bg-gray-300'}`}
-              >
+            <div className="flex items-center gap-3 bg-[#efd2fe]/20 p-3 rounded-xl border border-[#efd2fe] mt-2 cursor-pointer hover:bg-[#efd2fe]/40 transition-colors" onClick={() => setIsRecurring(!isRecurring)}>
+              <div className={`w-10 h-6 flex items-center rounded-full p-1 transition-colors duration-300 ${isRecurring ? 'bg-[#f170c3]' : 'bg-gray-300'}`}>
                 <div className={`bg-white w-4 h-4 rounded-full shadow-md transform duration-300 ${isRecurring ? 'translate-x-4' : 'translate-x-0'}`}></div>
               </div>
               <div>
                 <p className="font-bold text-[#521256] text-xs">Recorrente (12x)</p>
-                <p className="text-[9px] opacity-60">Repetir esse valor pelos próximos meses</p>
+                <p className="text-[9px] opacity-60">Repetir esse valor pelos próximos 12 meses</p>
               </div>
             </div>
           )}
 
-          <button type="submit" className="w-full py-4 bg-[#521256] text-white font-black rounded-xl hover:scale-[1.01] active:scale-95 transition-all shadow-lg mt-4">
+          <button type="submit" className="w-full py-4 bg-[#521256] text-white font-black rounded-xl hover:scale-[1.01] active:scale-95 transition-all shadow-lg mt-4 text-sm uppercase tracking-widest">
             {initialData ? 'SALVAR ALTERAÇÕES' : 'ADICIONAR'}
           </button>
         </form>
