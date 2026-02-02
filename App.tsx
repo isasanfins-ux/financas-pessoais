@@ -152,14 +152,9 @@ const App: React.FC = () => {
     return () => { unsubTrans(); unsubCats(); unsubBudgets(); unsubInv(); unsubMarket(); unsubSettings(); };
   }, [currentUser, currentDate]);
 
+  // --- CORREÇÃO DO BUG AQUI! 🛠️ ---
+  // A função agora salva APENAS o que foi passado em 'u', sem sobrescrever o resto com dados velhos.
   const updSet = async (u: any) => currentUser && setDoc(doc(db, "settings", currentUser.id), { 
-    initialBalance, 
-    initialCreditBill: initialNubankBill, // Salva Nubank no campo antigo pra garantir
-    initialPortoBill,
-    totalCreditLimit,
-    nextMonthInvoice, 
-    closingDay,
-    dueDay,
     ...u, 
     uid: currentUser.id 
   }, { merge: true });
@@ -237,7 +232,6 @@ const App: React.FC = () => {
                 onOpenCategoryManager={() => setIsCatManagerOpen(true)}
                 initialBalance={initialBalance}
                 
-                // PASSANDO OS DOIS VALORES INDEPENDENTES
                 initialNubankBill={initialNubankBill}
                 initialPortoBill={initialPortoBill}
                 
@@ -246,9 +240,9 @@ const App: React.FC = () => {
                 
                 onUpdateInitialBalance={(v) => updSet({ initialBalance: v })}
                 
-                // FUNÇÕES DE ATUALIZAÇÃO INDEPENDENTES
-                onUpdateNubankBill={(v) => updSet({ initialCreditBill: v })} // Salva no campo antigo (Nubank)
-                onUpdatePortoBill={(v) => updSet({ initialPortoBill: v })}   // Salva no campo novo (Porto)
+                // FUNÇÕES DE ATUALIZAÇÃO BLINDADAS
+                onUpdateNubankBill={(v) => updSet({ initialCreditBill: v })} 
+                onUpdatePortoBill={(v) => updSet({ initialPortoBill: v })}   
                 
                 onUpdateTotalCreditLimit={(v) => updSet({ totalCreditLimit: v })}
                 onUpdateNextMonthInvoice={(v) => updSet({ nextMonthInvoice: v })}
@@ -256,7 +250,7 @@ const App: React.FC = () => {
               />
             </div>
           )}
-          {/* Outras abas mantidas iguais... */}
+          {/* Outras abas... */}
           {activeTab === 'market' && ( <div className="w-full pb-24 lg:pb-0"> {monthSelector} <Market items={marketItems} onAddItem={addMarketItem} onDeleteItem={deleteMarketItem} /> </div> )}
           {activeTab === 'reports' && ( <div className="w-full pb-24 lg:pb-0"> <Reports transactions={allTransactions} /> </div> )}
           {activeTab === 'investments' && ( <div className="w-full pb-24 lg:pb-0"> <Investments history={investmentHistory} onAddTransaction={addInv} onUpdateTransaction={updInv} onDeleteTransaction={delInv} /> </div> )}
