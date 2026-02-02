@@ -34,7 +34,6 @@ const App: React.FC = () => {
   const [closingDay, setClosingDay] = useState<number>(6); 
   const [dueDay, setDueDay] = useState<number>(13);       
 
-  // --- O FILTRO DO CALENDÁRIO ---
   const monthlyTransactions = useMemo(() => {
     return allTransactions.filter(t => {
       const tDate = new Date(t.date + 'T12:00:00');
@@ -48,10 +47,9 @@ const App: React.FC = () => {
   const [investmentHistory, setInvestmentHistory] = useState<InvestmentTransaction[]>([]);
   const [marketItems, setMarketItems] = useState<MarketItem[]>([]); 
 
-  // SALDOS E LIMITES
   const [initialBalance, setInitialBalance] = useState<number>(0);
-  const [initialNubankBill, setInitialNubankBill] = useState<number>(0); // Antigo initialCreditBill
-  const [initialPortoBill, setInitialPortoBill] = useState<number>(0);   // NOVO!
+  const [initialNubankBill, setInitialNubankBill] = useState<number>(0); 
+  const [initialPortoBill, setInitialPortoBill] = useState<number>(0);   
   const [totalCreditLimit, setTotalCreditLimit] = useState<number>(5000);
   const [nextMonthInvoice, setNextMonthInvoice] = useState<number>(0);
 
@@ -62,7 +60,6 @@ const App: React.FC = () => {
   const nextMonth = () => setCurrentDate(new Date(currentDate.setMonth(currentDate.getMonth() + 1)));
   const prevMonth = () => setCurrentDate(new Date(currentDate.setMonth(currentDate.getMonth() - 1)));
 
-  // CARREGAR DADOS
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (fUser) => {
       if (fUser) {
@@ -139,7 +136,6 @@ const App: React.FC = () => {
       if (docSnap.exists()) {
         const data = docSnap.data();
         setInitialBalance(data.initialBalance || 0);
-        // Mapeia initialCreditBill (banco) -> initialNubankBill (app)
         setInitialNubankBill(data.initialCreditBill || 0); 
         setInitialPortoBill(data.initialPortoBill || 0);
         setTotalCreditLimit(data.totalCreditLimit || 5000);
@@ -152,12 +148,8 @@ const App: React.FC = () => {
     return () => { unsubTrans(); unsubCats(); unsubBudgets(); unsubInv(); unsubMarket(); unsubSettings(); };
   }, [currentUser, currentDate]);
 
-  // --- CORREÇÃO DO BUG AQUI! 🛠️ ---
-  // A função agora salva APENAS o que foi passado em 'u', sem sobrescrever o resto com dados velhos.
-  const updSet = async (u: any) => currentUser && setDoc(doc(db, "settings", currentUser.id), { 
-    ...u, 
-    uid: currentUser.id 
-  }, { merge: true });
+  // Função BLINDADA contra o bug do telefone sem fio
+  const updSet = async (u: any) => currentUser && setDoc(doc(db, "settings", currentUser.id), { ...u, uid: currentUser.id }, { merge: true });
 
   const handleSaveProfile = async () => { /* Mantido */ };
   const handleLogout = async () => { await signOut(auth); setIsSettingsOpen(false); };
@@ -231,26 +223,19 @@ const App: React.FC = () => {
                 categories={categories}
                 onOpenCategoryManager={() => setIsCatManagerOpen(true)}
                 initialBalance={initialBalance}
-                
                 initialNubankBill={initialNubankBill}
                 initialPortoBill={initialPortoBill}
-                
                 totalCreditLimit={totalCreditLimit}
                 nextMonthInvoice={nextMonthInvoice}
-                
                 onUpdateInitialBalance={(v) => updSet({ initialBalance: v })}
-                
-                // FUNÇÕES DE ATUALIZAÇÃO BLINDADAS
                 onUpdateNubankBill={(v) => updSet({ initialCreditBill: v })} 
                 onUpdatePortoBill={(v) => updSet({ initialPortoBill: v })}   
-                
                 onUpdateTotalCreditLimit={(v) => updSet({ totalCreditLimit: v })}
                 onUpdateNextMonthInvoice={(v) => updSet({ nextMonthInvoice: v })}
                 closingDay={closingDay}
               />
             </div>
           )}
-          {/* Outras abas... */}
           {activeTab === 'market' && ( <div className="w-full pb-24 lg:pb-0"> {monthSelector} <Market items={marketItems} onAddItem={addMarketItem} onDeleteItem={deleteMarketItem} /> </div> )}
           {activeTab === 'reports' && ( <div className="w-full pb-24 lg:pb-0"> <Reports transactions={allTransactions} /> </div> )}
           {activeTab === 'investments' && ( <div className="w-full pb-24 lg:pb-0"> <Investments history={investmentHistory} onAddTransaction={addInv} onUpdateTransaction={updInv} onDeleteTransaction={delInv} /> </div> )}
@@ -265,6 +250,7 @@ const App: React.FC = () => {
                 onDeleteTransaction={deleteTransaction}
                 categories={categories}
                 onOpenCategoryManager={() => setIsCatManagerOpen(true)}
+                currentDate={currentDate} // <--- AQUI! ISSO FAZ O MODAL SABER O MÊS CERTO!
               />
             </div>
           )}
