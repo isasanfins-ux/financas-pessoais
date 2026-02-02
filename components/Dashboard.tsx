@@ -53,32 +53,29 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [modalType, setModalType] = useState<TransactionType>(TransactionType.EXPENSE);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
 
-  // Estados de Calibração
   const [isBalanceCalibrating, setIsBalanceCalibrating] = useState(false);
   const [isNubankCalibrating, setIsNubankCalibrating] = useState(false);
   const [isPortoCalibrating, setIsPortoCalibrating] = useState(false);
   const [isLimitCalibrating, setIsLimitCalibrating] = useState(false);
   const [calibrationValue, setCalibrationValue] = useState('');
 
-  // ESTADOS DE VISUALIZAÇÃO (ATUAL OU PRÓXIMA) 🆕
   const [nubankView, setNubankView] = useState<'CURRENT' | 'NEXT'>('CURRENT');
   const [portoView, setPortoView] = useState<'CURRENT' | 'NEXT'>('CURRENT');
 
-  const [activeDetailType, setActiveDetailType] = useState<'INCOME' | 'DEBIT' | 'CREDIT' | null>(null);
+  // Adicionei CREDIT_NUBANK e CREDIT_PORTO nos tipos de detalhe
+  const [activeDetailType, setActiveDetailType] = useState<'INCOME' | 'DEBIT' | 'CREDIT' | 'CREDIT_NUBANK' | 'CREDIT_PORTO' | null>(null);
+  
   const [isReady, setIsReady] = useState(false);
   useEffect(() => setIsReady(true), []);
 
   const PAYMENT_CATEGORY = "Pagamento de Fatura";
   
-  // Mês Atual (String YYYY-MM)
   const currentInvoiceMonth = (currentDate || new Date()).toISOString().slice(0, 7);
   
-  // Mês Seguinte (String YYYY-MM) 🆕
   const nextDate = new Date(currentDate);
   nextDate.setMonth(nextDate.getMonth() + 1);
   const nextInvoiceMonth = nextDate.toISOString().slice(0, 7);
 
-  // --- DADOS DO GRÁFICO ---
   const categoryData = useMemo(() => {
     if(!transactions) return [];
     const expenses = transactions.filter(t => t.type === TransactionType.EXPENSE && t.category !== PAYMENT_CATEGORY);
@@ -93,7 +90,6 @@ const Dashboard: React.FC<DashboardProps> = ({
     const safeAll = allTransactions || [];
     const safeMonthly = transactions || [];
 
-    // Helper genérico para filtrar por mês (Atual ou Próximo)
     const filterByMonth = (t: Transaction, targetMonth: string) => {
       if (t.invoiceMonth) return t.invoiceMonth === targetMonth;
       if (!t.date) return false;
@@ -103,7 +99,6 @@ const Dashboard: React.FC<DashboardProps> = ({
       return `${ty}-${String(tm).padStart(2, '0')}` === targetMonth;
     };
 
-    // --- CÁLCULOS NUBANK ---
     const gastosNubankAtual = safeAll
       .filter(t => t.type === TransactionType.EXPENSE && t.paymentMethod === PaymentMethod.CREDIT_CARD && filterByMonth(t, currentInvoiceMonth) && (t.cardType === 'Nubank' || !t.cardType))
       .reduce((acc, curr) => acc + curr.amount, 0);
@@ -113,9 +108,8 @@ const Dashboard: React.FC<DashboardProps> = ({
       .reduce((acc, curr) => acc + curr.amount, 0);
 
     const totalFaturaNubankAtual = initialNubankBill + gastosNubankAtual;
-    const totalFaturaNubankProxima = gastosNubankProximo; // Próxima começa do zero (gastos puros)
+    const totalFaturaNubankProxima = gastosNubankProximo;
 
-    // --- CÁLCULOS PORTO ---
     const gastosPortoAtual = safeAll
       .filter(t => t.type === TransactionType.EXPENSE && t.paymentMethod === PaymentMethod.CREDIT_CARD && filterByMonth(t, currentInvoiceMonth) && t.cardType === 'Porto')
       .reduce((acc, curr) => acc + curr.amount, 0);
@@ -127,12 +121,10 @@ const Dashboard: React.FC<DashboardProps> = ({
     const totalFaturaPortoAtual = initialPortoBill + gastosPortoAtual;
     const totalFaturaPortoProxima = gastosPortoProximo;
 
-    // --- TOTAIS GERAIS ---
     const receitas = safeMonthly.filter(t => t.type === TransactionType.INCOME).reduce((acc, curr) => acc + curr.amount, 0);
     const immediateExpenses = safeMonthly.filter(t => t.type === TransactionType.EXPENSE && t.paymentMethod !== PaymentMethod.CREDIT_CARD).reduce((acc, curr) => acc + curr.amount, 0);
     const pagamentosFatura = safeMonthly.filter(t => t.category === PAYMENT_CATEGORY).reduce((acc, curr) => acc + curr.amount, 0);
 
-    // Soma do que está sendo exibido no card no momento
     const valorExibidoNubank = nubankView === 'CURRENT' ? totalFaturaNubankAtual : totalFaturaNubankProxima;
     const valorExibidoPorto = portoView === 'CURRENT' ? totalFaturaPortoAtual : totalFaturaPortoProxima;
     const totalCreditUsed = valorExibidoNubank + valorExibidoPorto;
@@ -146,23 +138,10 @@ const Dashboard: React.FC<DashboardProps> = ({
       saldo: initialBalance + receitas - immediateExpenses - pagamentosFatura,
       receitas,
       despesasConta: immediateExpenses,
-      
-      // Valores Nubank
-      nubank: {
-        atual: totalFaturaNubankAtual,
-        proxima: totalFaturaNubankProxima,
-        gastosMes: gastosNubankAtual // Para calibração
-      },
-      
-      // Valores Porto
-      porto: {
-        atual: totalFaturaPortoAtual,
-        proxima: totalFaturaPortoProxima,
-        gastosMes: gastosPortoAtual // Para calibração
-      },
-
+      nubank: { atual: totalFaturaNubankAtual, proxima: totalFaturaNubankProxima, gastosMes: gastosNubankAtual },
+      porto: { atual: totalFaturaPortoAtual, proxima: totalFaturaPortoProxima, gastosMes: gastosPortoAtual },
       limiteTotal: totalCreditLimit,
-      totalCreditUsed, // Soma dinâmica baseada na view
+      totalCreditUsed,
       cardExpenses
     };
   }, [transactions, allTransactions, initialBalance, initialNubankBill, initialPortoBill, totalCreditLimit, currentInvoiceMonth, nextInvoiceMonth, closingDay, nubankView, portoView]);
@@ -172,26 +151,41 @@ const Dashboard: React.FC<DashboardProps> = ({
     return transactions.filter(t => t.category === selectedCategory && t.type === TransactionType.EXPENSE).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [selectedCategory, transactions]);
 
+  // --- LÓGICA DE FILTRO DA POP-UP DE DETALHES ---
   const detailTransactions = useMemo(() => {
     if (!activeDetailType) return [];
+
+    const filterByMonthHelper = (t: Transaction, targetMonth: string) => {
+      if (t.invoiceMonth) return t.invoiceMonth === targetMonth;
+      if (!t.date) return false;
+      const [y, m, d] = t.date.split('-').map(Number);
+      let tm = m, ty = y;
+      if (d > closingDay) { tm++; if(tm>12){tm=1;ty++} }
+      return `${ty}-${String(tm).padStart(2, '0')}` === targetMonth;
+    };
+
     if (activeDetailType === 'INCOME') return transactions.filter(t => t.type === TransactionType.INCOME).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     if (activeDetailType === 'DEBIT') return transactions.filter(t => t.type === TransactionType.EXPENSE && t.paymentMethod !== PaymentMethod.CREDIT_CARD).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     
-    // Detalhes do Cartão seguem a visualização atual dos cards? 
-    // Para simplificar, o detalhe geral mostra o mês ATUAL selecionado no calendário
+    // Lista TODOS os cartões (Mês Atual)
     if (activeDetailType === 'CREDIT') {
-      const belongsToCurrentInvoice = (t: Transaction) => {
-        if (t.invoiceMonth) return t.invoiceMonth === currentInvoiceMonth;
-        if (!t.date) return false;
-        const [y, m, d] = t.date.split('-').map(Number);
-        let tm = m, ty = y;
-        if (d > closingDay) { tm++; if(tm>12){tm=1;ty++} }
-        return `${ty}-${String(tm).padStart(2, '0')}` === currentInvoiceMonth;
-      };
-      return allTransactions.filter(t => t.type === TransactionType.EXPENSE && t.paymentMethod === PaymentMethod.CREDIT_CARD && belongsToCurrentInvoice(t)).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      return allTransactions.filter(t => t.type === TransactionType.EXPENSE && t.paymentMethod === PaymentMethod.CREDIT_CARD && filterByMonthHelper(t, currentInvoiceMonth)).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     }
+
+    // Lista SÓ NUBANK (Respeita a chavinha Atual/Próxima!)
+    if (activeDetailType === 'CREDIT_NUBANK') {
+      const targetMonth = nubankView === 'CURRENT' ? currentInvoiceMonth : nextInvoiceMonth;
+      return allTransactions.filter(t => t.type === TransactionType.EXPENSE && t.paymentMethod === PaymentMethod.CREDIT_CARD && (t.cardType === 'Nubank' || !t.cardType) && filterByMonthHelper(t, targetMonth)).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    }
+
+    // Lista SÓ PORTO (Respeita a chavinha Atual/Próxima!)
+    if (activeDetailType === 'CREDIT_PORTO') {
+      const targetMonth = portoView === 'CURRENT' ? currentInvoiceMonth : nextInvoiceMonth;
+      return allTransactions.filter(t => t.type === TransactionType.EXPENSE && t.paymentMethod === PaymentMethod.CREDIT_CARD && t.cardType === 'Porto' && filterByMonthHelper(t, targetMonth)).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    }
+
     return [];
-  }, [activeDetailType, transactions, allTransactions, currentInvoiceMonth, closingDay]);
+  }, [activeDetailType, transactions, allTransactions, currentInvoiceMonth, nextInvoiceMonth, closingDay, nubankView, portoView]);
 
   const handleOpenModal = (type: TransactionType) => { setModalType(type); setIsModalOpen(true); };
   const handleSave = (t: Partial<Transaction>) => { onAddTransaction({ ...t, id: Math.random().toString(), createdAt: Date.now() } as any); };
@@ -203,23 +197,9 @@ const Dashboard: React.FC<DashboardProps> = ({
 
   const saveCalibration = () => {
     const val = parseFloat(calibrationValue.replace(',', '.')) || 0;
-    
-    if (isBalanceCalibrating) { 
-        const currentNetMovement = stats.saldo - initialBalance; 
-        onUpdateInitialBalance(val - currentNetMovement); 
-    }
-    
-    if (isNubankCalibrating) {
-        // Só calibra a fatura ATUAL. A próxima é automática.
-        const novoInicial = val - stats.nubank.gastosMes;
-        onUpdateNubankBill(novoInicial);
-    }
-
-    if (isPortoCalibrating) {
-        const novoInicial = val - stats.porto.gastosMes;
-        onUpdatePortoBill(novoInicial);
-    }
-
+    if (isBalanceCalibrating) { const currentNetMovement = stats.saldo - initialBalance; onUpdateInitialBalance(val - currentNetMovement); }
+    if (isNubankCalibrating) { const novoInicial = val - stats.nubank.gastosMes; onUpdateNubankBill(novoInicial); }
+    if (isPortoCalibrating) { const novoInicial = val - stats.porto.gastosMes; onUpdatePortoBill(novoInicial); }
     if (isLimitCalibrating) onUpdateTotalCreditLimit(val);
     
     setCalibrationValue('');
@@ -232,6 +212,17 @@ const Dashboard: React.FC<DashboardProps> = ({
       <h3 className="text-2xl font-black mt-2 tracking-tight" style={{ color: color || textColor }}>R$ {value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</h3>
     </div>
   );
+
+  const getDetailTitle = () => {
+    switch(activeDetailType) {
+        case 'INCOME': return 'Receitas 🤑';
+        case 'DEBIT': return 'Saídas (Débito) 🔻';
+        case 'CREDIT': return 'Total em Cartões 💳';
+        case 'CREDIT_NUBANK': return `Fatura Nubank (${nubankView === 'CURRENT' ? 'Atual' : 'Próxima'}) 🟣`;
+        case 'CREDIT_PORTO': return `Fatura Porto (${portoView === 'CURRENT' ? 'Atual' : 'Próxima'}) 🔵`;
+        default: return 'Detalhes';
+    }
+  };
 
   if (!isReady) return <div className="p-10 text-center opacity-50">Carregando...</div>;
 
@@ -259,18 +250,17 @@ const Dashboard: React.FC<DashboardProps> = ({
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-            {/* --- CARD NUBANK --- */}
-            <div className={`p-6 rounded-[2rem] relative overflow-hidden shadow-lg transition-all ${nubankView === 'CURRENT' ? 'bg-[#820ad1] text-white group hover:scale-[1.01]' : 'bg-white border-2 border-[#820ad1] text-[#820ad1]'}`}>
+            {/* --- CARD NUBANK (Clicável) --- */}
+            <div 
+                onClick={() => setActiveDetailType('CREDIT_NUBANK')} 
+                className={`p-6 rounded-[2rem] relative overflow-hidden shadow-lg transition-all cursor-pointer ${nubankView === 'CURRENT' ? 'bg-[#820ad1] text-white group hover:scale-[1.01]' : 'bg-white border-2 border-[#820ad1] text-[#820ad1]'}`}
+            >
                 <div className="flex justify-between items-start mb-4">
                     <div className="flex items-center gap-3">
                         <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xl ${nubankView === 'CURRENT' ? 'bg-white/20' : 'bg-[#820ad1]/10'}`}>🟣</div>
-                        <div>
-                            <h3 className="text-lg font-black leading-none">Nubank</h3>
-                            <p className="text-[10px] font-bold opacity-60 uppercase">Principal</p>
-                        </div>
+                        <div><h3 className="text-lg font-black leading-none">Nubank</h3><p className="text-[10px] font-bold opacity-60 uppercase">Principal</p></div>
                     </div>
-                    <div className="flex gap-2">
-                        {/* TOGGLE VIEW */}
+                    <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
                         <div className="bg-black/20 p-1 rounded-lg flex text-[10px] font-bold">
                             <button onClick={() => setNubankView('CURRENT')} className={`px-2 py-1 rounded ${nubankView === 'CURRENT' ? 'bg-white text-[#820ad1]' : 'text-white/50 hover:text-white'}`}>Atual</button>
                             <button onClick={() => setNubankView('NEXT')} className={`px-2 py-1 rounded ${nubankView === 'NEXT' ? 'bg-[#820ad1] text-white' : (nubankView === 'CURRENT' ? 'text-white/50 hover:text-white' : 'text-[#820ad1]/50')}`}>Próx</button>
@@ -280,26 +270,22 @@ const Dashboard: React.FC<DashboardProps> = ({
                         )}
                     </div>
                 </div>
-                
-                <p className="text-[10px] font-bold opacity-60 uppercase tracking-widest mb-1">
-                    {nubankView === 'CURRENT' ? 'Fatura Atual (Aberta)' : 'Fatura Seguinte (Previsão)'}
-                </p>
+                <p className="text-[10px] font-bold opacity-60 uppercase tracking-widest mb-1">{nubankView === 'CURRENT' ? 'Fatura Atual (Aberta)' : 'Fatura Seguinte (Previsão)'}</p>
                 <h2 className="text-4xl font-black mb-2">R$ {nubankView === 'CURRENT' ? stats.nubank.atual.toLocaleString('pt-BR') : stats.nubank.proxima.toLocaleString('pt-BR')}</h2>
                 <p className="text-[10px] opacity-50">Vencimento dia 13</p>
             </div>
 
-            {/* --- CARD PORTO SEGURO --- */}
-            <div className={`p-6 rounded-[2rem] relative overflow-hidden shadow-lg transition-all ${portoView === 'CURRENT' ? 'bg-[#00a1fc] text-white group hover:scale-[1.01]' : 'bg-white border-2 border-[#00a1fc] text-[#00a1fc]'}`}>
+            {/* --- CARD PORTO SEGURO (Clicável) --- */}
+            <div 
+                onClick={() => setActiveDetailType('CREDIT_PORTO')}
+                className={`p-6 rounded-[2rem] relative overflow-hidden shadow-lg transition-all cursor-pointer ${portoView === 'CURRENT' ? 'bg-[#00a1fc] text-white group hover:scale-[1.01]' : 'bg-white border-2 border-[#00a1fc] text-[#00a1fc]'}`}
+            >
                 <div className="flex justify-between items-start mb-4">
                     <div className="flex items-center gap-3">
                         <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xl ${portoView === 'CURRENT' ? 'bg-white/20' : 'bg-[#00a1fc]/10'}`}>🔵</div>
-                        <div>
-                            <h3 className="text-lg font-black leading-none">Porto Seguro</h3>
-                            <p className="text-[10px] font-bold opacity-60 uppercase">Secundário</p>
-                        </div>
+                        <div><h3 className="text-lg font-black leading-none">Porto Seguro</h3><p className="text-[10px] font-bold opacity-60 uppercase">Secundário</p></div>
                     </div>
-                    <div className="flex gap-2">
-                        {/* TOGGLE VIEW */}
+                    <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
                         <div className="bg-black/20 p-1 rounded-lg flex text-[10px] font-bold">
                             <button onClick={() => setPortoView('CURRENT')} className={`px-2 py-1 rounded ${portoView === 'CURRENT' ? 'bg-white text-[#00a1fc]' : 'text-white/50 hover:text-white'}`}>Atual</button>
                             <button onClick={() => setPortoView('NEXT')} className={`px-2 py-1 rounded ${portoView === 'NEXT' ? 'bg-[#00a1fc] text-white' : (portoView === 'CURRENT' ? 'text-white/50 hover:text-white' : 'text-[#00a1fc]/50')}`}>Próx</button>
@@ -309,10 +295,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                         )}
                     </div>
                 </div>
-                
-                <p className="text-[10px] font-bold opacity-60 uppercase tracking-widest mb-1">
-                    {portoView === 'CURRENT' ? 'Fatura Atual (Aberta)' : 'Fatura Seguinte (Previsão)'}
-                </p>
+                <p className="text-[10px] font-bold opacity-60 uppercase tracking-widest mb-1">{portoView === 'CURRENT' ? 'Fatura Atual (Aberta)' : 'Fatura Seguinte (Previsão)'}</p>
                 <h2 className="text-4xl font-black mb-2">R$ {portoView === 'CURRENT' ? stats.porto.atual.toLocaleString('pt-BR') : stats.porto.proxima.toLocaleString('pt-BR')}</h2>
                 <p className="text-[10px] opacity-50">Vencimento dia 05</p>
             </div>
@@ -374,7 +357,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                     <div>
                         <p className="text-[10px] font-black opacity-40 uppercase tracking-widest">Detalhamento</p>
                         <h3 className="text-2xl font-black text-[#521256]">
-                            {activeDetailType === 'INCOME' ? 'Receitas 🤑' : (activeDetailType === 'DEBIT' ? 'Saídas (Débito) 🔻' : 'Faturas de Cartão 💳')}
+                            {getDetailTitle()}
                         </h3>
                     </div>
                     <button onClick={() => setActiveDetailType(null)} className="p-2 hover:bg-gray-100 rounded-full transition-colors"><svg className="w-6 h-6 text-[#521256]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg></button>
@@ -383,15 +366,23 @@ const Dashboard: React.FC<DashboardProps> = ({
                     {detailTransactions.map(t => (
                         <div key={t.id} className="flex justify-between items-center p-4 bg-[#efd2fe]/20 rounded-2xl border border-transparent hover:border-[#f170c3]/30 transition-colors">
                             <div className="flex items-center gap-3">
-                                {activeDetailType === 'CREDIT' && (
+                                {activeDetailType.startsWith('CREDIT') && (
                                     <span className="text-lg" title={t.cardType === 'Porto' ? 'Porto' : 'Nubank'}>{t.cardType === 'Porto' ? '🔵' : '🟣'}</span>
                                 )}
-                                <div><p className="font-bold text-[#521256] text-sm">{t.description}</p><p className="text-[10px] opacity-50 font-bold uppercase">{new Date(t.date).toLocaleDateString('pt-BR')}</p></div>
+                                <div>
+                                    <p className="font-bold text-[#521256] text-sm">{t.description}</p>
+                                    <div className="flex items-center gap-2">
+                                        <p className="text-[10px] opacity-50 font-bold uppercase">{new Date(t.date).toLocaleDateString('pt-BR')}</p>
+                                        {t.installment && t.installment.total > 1 && (
+                                            <span className="text-[9px] bg-[#f170c3] text-white px-1.5 py-0.5 rounded font-black">{t.installment.current}/{t.installment.total}</span>
+                                        )}
+                                    </div>
+                                </div>
                             </div>
                             <span className={`font-black text-sm ${t.type === TransactionType.INCOME ? 'text-green-600' : 'text-red-500'}`}>{t.type === TransactionType.INCOME ? '+ ' : '- '} R$ {t.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
                         </div>
                     ))}
-                    {detailTransactions.length === 0 && (<p className="text-center text-gray-400 font-bold text-xs py-8">Nenhum lançamento encontrado.</p>)}
+                    {detailTransactions.length === 0 && (<p className="text-center text-gray-400 font-bold text-xs py-8">Nenhum lançamento encontrado nesta fatura.</p>)}
                 </div>
             </div>
         </div>
