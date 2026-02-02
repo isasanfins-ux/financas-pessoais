@@ -13,11 +13,20 @@ interface DashboardProps {
   onAddCategory?: (name: string) => void;
   onOpenCategoryManager?: () => void;
   initialBalance: number;
-  initialCreditBill: number;
+  
+  // NOVAS PROPS INDEPENDENTES
+  initialNubankBill: number;
+  initialPortoBill: number;
+  
   totalCreditLimit: number;
   nextMonthInvoice: number;
   onUpdateInitialBalance: (val: number) => void;
-  onUpdateInitialCreditBill: (val: number) => void;
+  
+  // FUNÇÕES DE ATUALIZAÇÃO INDEPENDENTES
+  onUpdateNubankBill: (val: number) => void;
+  onUpdatePortoBill: (val: number) => void;
+  
+  onUpdateInitialCreditBill?: (val: number) => void; // Mantido por compatibilidade
   onUpdateTotalCreditLimit: (val: number) => void;
   onUpdateNextMonthInvoice: (val: number) => void;
   closingDay?: number; 
@@ -32,11 +41,13 @@ const Dashboard: React.FC<DashboardProps> = ({
   onAddCategory,
   onOpenCategoryManager,
   initialBalance = 0,
-  initialCreditBill = 0,
+  initialNubankBill = 0,
+  initialPortoBill = 0,
   totalCreditLimit = 0,
   nextMonthInvoice = 0,
   onUpdateInitialBalance,
-  onUpdateInitialCreditBill,
+  onUpdateNubankBill,
+  onUpdatePortoBill,
   onUpdateTotalCreditLimit,
   closingDay = 6 
 }) => {
@@ -46,13 +57,12 @@ const Dashboard: React.FC<DashboardProps> = ({
 
   // Estados de Calibração
   const [isBalanceCalibrating, setIsBalanceCalibrating] = useState(false);
-  const [isCreditCalibrating, setIsCreditCalibrating] = useState(false);
+  const [isNubankCalibrating, setIsNubankCalibrating] = useState(false); // Calibra SÓ Nubank
+  const [isPortoCalibrating, setIsPortoCalibrating] = useState(false);   // Calibra SÓ Porto
   const [isLimitCalibrating, setIsLimitCalibrating] = useState(false);
   const [calibrationValue, setCalibrationValue] = useState('');
 
-  // ESTADO NOVO: Controle da Pop-up de Detalhes 🆕
   const [activeDetailType, setActiveDetailType] = useState<'INCOME' | 'DEBIT' | 'CREDIT' | null>(null);
-
   const [isReady, setIsReady] = useState(false);
   useEffect(() => setIsReady(true), []);
 
@@ -83,17 +93,21 @@ const Dashboard: React.FC<DashboardProps> = ({
       return `${ty}-${String(tm).padStart(2, '0')}` === currentInvoiceMonth;
     };
 
+    // 1. NUBANK
     const gastosNubankNoMes = safeAll
       .filter(t => t.type === TransactionType.EXPENSE && t.paymentMethod === PaymentMethod.CREDIT_CARD && belongsToCurrentInvoice(t) && (t.cardType === 'Nubank' || !t.cardType))
       .reduce((acc, curr) => acc + curr.amount, 0);
     
-    const totalFaturaNubank = initialCreditBill + gastosNubankNoMes;
+    // Total Nubank = Valor Inicial Manual + Gastos Automáticos
+    const totalFaturaNubank = initialNubankBill + gastosNubankNoMes;
 
+    // 2. PORTO SEGURO
     const gastosPortoNoMes = safeAll
       .filter(t => t.type === TransactionType.EXPENSE && t.paymentMethod === PaymentMethod.CREDIT_CARD && belongsToCurrentInvoice(t) && t.cardType === 'Porto')
       .reduce((acc, curr) => acc + curr.amount, 0);
     
-    const totalFaturaPorto = gastosPortoNoMes;
+    // Total Porto = Valor Inicial Manual + Gastos Automáticos
+    const totalFaturaPorto = initialPortoBill + gastosPortoNoMes;
 
     const receitas = safeMonthly.filter(t => t.type === TransactionType.INCOME).reduce((acc, curr) => acc + curr.amount, 0);
     const immediateExpenses = safeMonthly.filter(t => t.type === TransactionType.EXPENSE && t.paymentMethod !== PaymentMethod.CREDIT_CARD).reduce((acc, curr) => acc + curr.amount, 0);
@@ -113,30 +127,23 @@ const Dashboard: React.FC<DashboardProps> = ({
       totalFaturaNubank,
       gastosNubankNoMes,
       totalFaturaPorto,
+      gastosPortoNoMes,
       limiteTotal: totalCreditLimit,
       totalCreditUsed,
       cardExpenses
     };
-  }, [transactions, allTransactions, initialBalance, totalCreditLimit, currentInvoiceMonth, closingDay]);
+  }, [transactions, allTransactions, initialBalance, initialNubankBill, initialPortoBill, totalCreditLimit, currentInvoiceMonth, closingDay]);
 
-  // --- FILTRO PARA A POP-UP DE DETALHES 🔎 ---
+  const categoryTransactions = useMemo(() => {
+    if (!selectedCategory) return [];
+    return transactions.filter(t => t.category === selectedCategory && t.type === TransactionType.EXPENSE).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [selectedCategory, transactions]);
+
   const detailTransactions = useMemo(() => {
     if (!activeDetailType) return [];
-
-    if (activeDetailType === 'INCOME') {
-      return transactions
-        .filter(t => t.type === TransactionType.INCOME)
-        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-    }
-
-    if (activeDetailType === 'DEBIT') {
-      return transactions
-        .filter(t => t.type === TransactionType.EXPENSE && t.paymentMethod !== PaymentMethod.CREDIT_CARD)
-        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-    }
-
+    if (activeDetailType === 'INCOME') return transactions.filter(t => t.type === TransactionType.INCOME).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    if (activeDetailType === 'DEBIT') return transactions.filter(t => t.type === TransactionType.EXPENSE && t.paymentMethod !== PaymentMethod.CREDIT_CARD).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     if (activeDetailType === 'CREDIT') {
-      // Reusa a lógica de fatura para mostrar tudo o que está somado nos cartões agora
       const belongsToCurrentInvoice = (t: Transaction) => {
         if (t.invoiceMonth) return t.invoiceMonth === currentInvoiceMonth;
         if (!t.date) return false;
@@ -145,40 +152,47 @@ const Dashboard: React.FC<DashboardProps> = ({
         if (d > closingDay) { tm++; if(tm>12){tm=1;ty++} }
         return `${ty}-${String(tm).padStart(2, '0')}` === currentInvoiceMonth;
       };
-
-      return allTransactions
-        .filter(t => t.type === TransactionType.EXPENSE && t.paymentMethod === PaymentMethod.CREDIT_CARD && belongsToCurrentInvoice(t))
-        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      return allTransactions.filter(t => t.type === TransactionType.EXPENSE && t.paymentMethod === PaymentMethod.CREDIT_CARD && belongsToCurrentInvoice(t)).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     }
-
     return [];
   }, [activeDetailType, transactions, allTransactions, currentInvoiceMonth, closingDay]);
-
-  const categoryTransactions = useMemo(() => {
-    if (!selectedCategory) return [];
-    return transactions.filter(t => t.category === selectedCategory && t.type === TransactionType.EXPENSE).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [selectedCategory, transactions]);
 
   const handleOpenModal = (type: TransactionType) => { setModalType(type); setIsModalOpen(true); };
   const handleSave = (t: Partial<Transaction>) => { onAddTransaction({ ...t, id: Math.random().toString(), createdAt: Date.now() } as any); };
   
   const openBalanceCalibration = () => { setCalibrationValue(stats.saldo.toFixed(2)); setIsBalanceCalibrating(true); };
-  const openNubankCalibration = () => { setCalibrationValue(stats.totalFaturaNubank.toFixed(2)); setIsCreditCalibrating(true); };
+  
+  // ABRE CALIBRAÇÃO ESPECÍFICA
+  const openNubankCalibration = () => { setCalibrationValue(stats.totalFaturaNubank.toFixed(2)); setIsNubankCalibrating(true); };
+  const openPortoCalibration = () => { setCalibrationValue(stats.totalFaturaPorto.toFixed(2)); setIsPortoCalibrating(true); };
+  
   const openLimitCalibration = () => { setCalibrationValue(totalCreditLimit.toString()); setIsLimitCalibrating(true); };
 
   const saveCalibration = () => {
     const val = parseFloat(calibrationValue.replace(',', '.')) || 0;
+    
     if (isBalanceCalibrating) { 
         const currentNetMovement = stats.saldo - initialBalance; 
         onUpdateInitialBalance(val - currentNetMovement); 
     }
-    if (isCreditCalibrating) {
+    
+    // LÓGICA DE CALIBRAÇÃO NUBANK (Engenharia Reversa)
+    if (isNubankCalibrating) {
+        // NovoInicial = TotalDesejado - GastosDoMês
         const novoInicial = val - stats.gastosNubankNoMes;
-        onUpdateInitialCreditBill(novoInicial);
+        onUpdateNubankBill(novoInicial);
     }
+
+    // LÓGICA DE CALIBRAÇÃO PORTO (Engenharia Reversa)
+    if (isPortoCalibrating) {
+        const novoInicial = val - stats.gastosPortoNoMes;
+        onUpdatePortoBill(novoInicial);
+    }
+
     if (isLimitCalibrating) onUpdateTotalCreditLimit(val);
+    
     setCalibrationValue('');
-    setIsBalanceCalibrating(false); setIsCreditCalibrating(false); setIsLimitCalibrating(false);
+    setIsBalanceCalibrating(false); setIsNubankCalibrating(false); setIsPortoCalibrating(false); setIsLimitCalibrating(false);
   };
 
   const StatCard = ({ title, value, color, bgColor = 'white', textColor = '#521256', onClick }: any) => (
@@ -192,34 +206,11 @@ const Dashboard: React.FC<DashboardProps> = ({
 
   return (
     <div className="space-y-8 animate-in fade-in duration-700 pb-10">
-      
-      {/* --- CARDS AGORA SÃO CLICÁVEIS! --- */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
         <StatCard title="Saldo Disponível" value={stats.saldo} bgColor={COLORS.BASE} onClick={openBalanceCalibration} />
-        
-        {/* Clique para ver Receitas */}
-        <StatCard 
-            title="Receitas do Mês 🤩" 
-            value={stats.receitas} 
-            bgColor="#e2e585" 
-            textColor="#521256" 
-            onClick={() => setActiveDetailType('INCOME')} 
-        />
-        
-        {/* Clique para ver Saídas */}
-        <StatCard 
-            title="Saídas (Débito) 🔻" 
-            value={stats.despesasConta} 
-            color="#ef4444" 
-            onClick={() => setActiveDetailType('DEBIT')} 
-        />
-        
-        {/* Clique para ver Detalhes dos Cartões */}
-        <StatCard 
-            title="Total em Cartões 💳" 
-            value={stats.totalCreditUsed} 
-            onClick={() => setActiveDetailType('CREDIT')} 
-        />
+        <StatCard title="Receitas do Mês 🤩" value={stats.receitas} bgColor="#e2e585" textColor="#521256" onClick={() => setActiveDetailType('INCOME')} />
+        <StatCard title="Saídas (Débito) 🔻" value={stats.despesasConta} color="#ef4444" onClick={() => setActiveDetailType('DEBIT')} />
+        <StatCard title="Total em Cartões 💳" value={stats.totalCreditUsed} onClick={() => setActiveDetailType('CREDIT')} />
       </div>
 
       <div className="flex flex-wrap gap-4 items-center">
@@ -237,12 +228,14 @@ const Dashboard: React.FC<DashboardProps> = ({
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+            {/* --- CARD NUBANK --- */}
             <div className="bg-[#820ad1] p-6 rounded-[2rem] text-white relative overflow-hidden shadow-lg group hover:scale-[1.01] transition-all">
                 <div className="flex justify-between items-start mb-4">
                     <div className="flex items-center gap-3">
                         <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center text-xl">🟣</div>
                         <div><h3 className="text-lg font-black leading-none">Nubank</h3><p className="text-[10px] font-bold opacity-60 uppercase">Principal</p></div>
                     </div>
+                    {/* BOTÃO NUBANK (ENGRENAGEM INDEPENDENTE) */}
                     <button onClick={openNubankCalibration} className="p-2 bg-white/10 rounded-lg hover:bg-white/20 transition-colors" title="Ajustar Valor">⚙️</button>
                 </div>
                 <p className="text-[10px] font-bold opacity-60 uppercase tracking-widest mb-1">Fatura Atual (Aberta)</p>
@@ -250,14 +243,19 @@ const Dashboard: React.FC<DashboardProps> = ({
                 <p className="text-[10px] opacity-50">Vencimento dia 13</p>
             </div>
 
+            {/* --- CARD PORTO SEGURO --- */}
             <div className="bg-[#00a1fc] p-6 rounded-[2rem] text-white relative overflow-hidden shadow-lg group hover:scale-[1.01] transition-all">
-                <div className="flex items-center gap-3 mb-4">
-                    <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center text-xl">🔵</div>
-                    <div><h3 className="text-lg font-black leading-none">Porto Seguro</h3><p className="text-[10px] font-bold opacity-60 uppercase">Secundário</p></div>
+                <div className="flex justify-between items-start mb-4">
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center text-xl">🔵</div>
+                        <div><h3 className="text-lg font-black leading-none">Porto Seguro</h3><p className="text-[10px] font-bold opacity-60 uppercase">Secundário</p></div>
+                    </div>
+                    {/* BOTÃO PORTO (ENGRENAGEM INDEPENDENTE) */}
+                    <button onClick={openPortoCalibration} className="p-2 bg-white/10 rounded-lg hover:bg-white/20 transition-colors" title="Ajustar Valor">⚙️</button>
                 </div>
                 <p className="text-[10px] font-bold opacity-60 uppercase tracking-widest mb-1">Fatura Atual (Aberta)</p>
                 <h2 className="text-4xl font-black mb-2">R$ {stats.totalFaturaPorto.toLocaleString('pt-BR')}</h2>
-                <p className="text-[10px] opacity-50">Vencimento dia 13</p>
+                <p className="text-[10px] opacity-50">Vencimento dia 05</p> {/* DATA ATUALIZADA AQUI ✅ */}
             </div>
         </div>
 
@@ -308,11 +306,8 @@ const Dashboard: React.FC<DashboardProps> = ({
       </div>
 
       <TransactionModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onSave={handleSave} type={modalType} availableCategories={categories} onAddCategory={onAddCategory} onOpenCategoryManager={onOpenCategoryManager} closingDay={closingDay} />
-      
-      {/* POP-UP DO GRÁFICO (PIZZA) */}
       {selectedCategory && ( <div className="fixed inset-0 bg-[#521256]/60 backdrop-blur-md z-[150] flex items-center justify-center p-4"><div className="bg-white p-8 rounded-2xl w-full max-w-md"><div className="flex justify-between mb-4"><h3 className="font-bold text-[#521256]">{selectedCategory}</h3><button onClick={() => setSelectedCategory(null)}>Fechar</button></div><div className="max-h-[60vh] overflow-y-auto">{categoryTransactions.map(t => (<div key={t.id} className="flex justify-between py-2 border-b border-gray-100"><span className="text-sm">{t.description}</span><span className="font-bold text-red-500">- R$ {t.amount.toLocaleString('pt-BR')}</span></div>))}</div></div></div> )}
 
-      {/* --- NOVA POP-UP DE DETALHES (RECEITAS / SAIDAS / CARTÕES) 🆕 --- */}
       {activeDetailType && (
         <div className="fixed inset-0 bg-[#521256]/60 backdrop-blur-md z-[150] flex items-center justify-center p-4 animate-in fade-in duration-200">
             <div className="bg-white rounded-[2.5rem] w-full max-w-md p-8 shadow-2xl animate-in zoom-in duration-300 max-h-[80vh] flex flex-col">
@@ -325,50 +320,32 @@ const Dashboard: React.FC<DashboardProps> = ({
                     </div>
                     <button onClick={() => setActiveDetailType(null)} className="p-2 hover:bg-gray-100 rounded-full transition-colors"><svg className="w-6 h-6 text-[#521256]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg></button>
                 </div>
-                
                 <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-3">
                     {detailTransactions.map(t => (
                         <div key={t.id} className="flex justify-between items-center p-4 bg-[#efd2fe]/20 rounded-2xl border border-transparent hover:border-[#f170c3]/30 transition-colors">
                             <div className="flex items-center gap-3">
                                 {activeDetailType === 'CREDIT' && (
-                                    <span className="text-lg" title={t.cardType === 'Porto' ? 'Porto' : 'Nubank'}>
-                                        {t.cardType === 'Porto' ? '🔵' : '🟣'}
-                                    </span>
+                                    <span className="text-lg" title={t.cardType === 'Porto' ? 'Porto' : 'Nubank'}>{t.cardType === 'Porto' ? '🔵' : '🟣'}</span>
                                 )}
-                                <div>
-                                    <p className="font-bold text-[#521256] text-sm">{t.description}</p>
-                                    <p className="text-[10px] opacity-50 font-bold uppercase">{new Date(t.date).toLocaleDateString('pt-BR')}</p>
-                                </div>
+                                <div><p className="font-bold text-[#521256] text-sm">{t.description}</p><p className="text-[10px] opacity-50 font-bold uppercase">{new Date(t.date).toLocaleDateString('pt-BR')}</p></div>
                             </div>
-                            <span className={`font-black text-sm ${t.type === TransactionType.INCOME ? 'text-green-600' : 'text-red-500'}`}>
-                                {t.type === TransactionType.INCOME ? '+ ' : '- '} 
-                                R$ {t.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                            </span>
+                            <span className={`font-black text-sm ${t.type === TransactionType.INCOME ? 'text-green-600' : 'text-red-500'}`}>{t.type === TransactionType.INCOME ? '+ ' : '- '} R$ {t.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
                         </div>
                     ))}
-                    {detailTransactions.length === 0 && (
-                        <p className="text-center text-gray-400 font-bold text-xs py-8">Nenhum lançamento encontrado.</p>
-                    )}
+                    {detailTransactions.length === 0 && (<p className="text-center text-gray-400 font-bold text-xs py-8">Nenhum lançamento encontrado.</p>)}
                 </div>
-                
-                {activeDetailType === 'CREDIT' && (
-                    <div className="mt-4 pt-4 border-t border-[#efd2fe] flex justify-between items-center text-xs font-bold text-[#521256]/50">
-                        <span>🟣 Nubank</span>
-                        <span>🔵 Porto Seguro</span>
-                    </div>
-                )}
             </div>
         </div>
       )}
 
-      {(isBalanceCalibrating || isCreditCalibrating || isLimitCalibrating) && (
+      {(isBalanceCalibrating || isNubankCalibrating || isPortoCalibrating || isLimitCalibrating) && (
         <div className="fixed inset-0 bg-[#521256]/60 backdrop-blur-md z-[150] flex items-center justify-center p-4 animate-in fade-in duration-200">
           <div className="bg-white rounded-[2.5rem] w-full max-w-sm p-10 shadow-2xl animate-in zoom-in duration-300">
             <h3 className="text-xl font-black text-[#521256] mb-2 text-center">
-              {isLimitCalibrating ? 'Definir Limite Global' : 'Calibrar ' + (isBalanceCalibrating ? 'Saldo' : 'Fatura Nubank')} ✨
+              {isLimitCalibrating ? 'Definir Limite Global' : 'Calibrar ' + (isBalanceCalibrating ? 'Saldo' : (isNubankCalibrating ? 'Nubank' : 'Porto'))} ✨
             </h3>
              <p className="text-xs font-bold text-[#521256]/40 mb-8 text-center uppercase tracking-widest">
-              {isCreditCalibrating ? 'Qual o valor REAL da fatura do Nubank agora?' : 'Digite o valor correto:'}
+              {isNubankCalibrating || isPortoCalibrating ? 'Qual o valor REAL da fatura agora?' : 'Digite o valor correto:'}
             </p>
             <div className="mb-8">
               <label className="text-[10px] font-black text-[#521256]/50 uppercase tracking-[0.2em] mb-2 block">Valor em R$</label>
@@ -376,7 +353,7 @@ const Dashboard: React.FC<DashboardProps> = ({
             </div>
             <div className="flex flex-col gap-3">
               <button onClick={saveCalibration} className="w-full py-5 bg-[#521256] text-white font-black rounded-2xl shadow-xl hover:scale-[1.02] active:scale-95 transition-all">SALVAR</button>
-              <button onClick={() => { setIsBalanceCalibrating(false); setIsCreditCalibrating(false); setIsLimitCalibrating(false); }} className="w-full py-4 text-[#521256] font-black hover:bg-[#efd2fe]/50 rounded-2xl transition-colors text-sm">CANCELAR</button>
+              <button onClick={() => { setIsBalanceCalibrating(false); setIsNubankCalibrating(false); setIsPortoCalibrating(false); setIsLimitCalibrating(false); }} className="w-full py-4 text-[#521256] font-black hover:bg-[#efd2fe]/50 rounded-2xl transition-colors text-sm">CANCELAR</button>
             </div>
           </div>
         </div>
