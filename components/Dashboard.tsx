@@ -14,7 +14,6 @@ interface DashboardProps {
   onOpenCategoryManager?: () => void;
   initialBalance: number;
   
-  // NOVAS PROPS INDEPENDENTES
   initialNubankBill: number;
   initialPortoBill: number;
   
@@ -22,11 +21,10 @@ interface DashboardProps {
   nextMonthInvoice: number;
   onUpdateInitialBalance: (val: number) => void;
   
-  // FUNÇÕES DE ATUALIZAÇÃO INDEPENDENTES
   onUpdateNubankBill: (val: number) => void;
   onUpdatePortoBill: (val: number) => void;
   
-  onUpdateInitialCreditBill?: (val: number) => void; // Mantido por compatibilidade
+  onUpdateInitialCreditBill?: (val: number) => void;
   onUpdateTotalCreditLimit: (val: number) => void;
   onUpdateNextMonthInvoice: (val: number) => void;
   closingDay?: number; 
@@ -57,17 +55,28 @@ const Dashboard: React.FC<DashboardProps> = ({
 
   // Estados de Calibração
   const [isBalanceCalibrating, setIsBalanceCalibrating] = useState(false);
-  const [isNubankCalibrating, setIsNubankCalibrating] = useState(false); // Calibra SÓ Nubank
-  const [isPortoCalibrating, setIsPortoCalibrating] = useState(false);   // Calibra SÓ Porto
+  const [isNubankCalibrating, setIsNubankCalibrating] = useState(false);
+  const [isPortoCalibrating, setIsPortoCalibrating] = useState(false);
   const [isLimitCalibrating, setIsLimitCalibrating] = useState(false);
   const [calibrationValue, setCalibrationValue] = useState('');
+
+  // ESTADOS DE VISUALIZAÇÃO (ATUAL OU PRÓXIMA) 🆕
+  const [nubankView, setNubankView] = useState<'CURRENT' | 'NEXT'>('CURRENT');
+  const [portoView, setPortoView] = useState<'CURRENT' | 'NEXT'>('CURRENT');
 
   const [activeDetailType, setActiveDetailType] = useState<'INCOME' | 'DEBIT' | 'CREDIT' | null>(null);
   const [isReady, setIsReady] = useState(false);
   useEffect(() => setIsReady(true), []);
 
   const PAYMENT_CATEGORY = "Pagamento de Fatura";
+  
+  // Mês Atual (String YYYY-MM)
   const currentInvoiceMonth = (currentDate || new Date()).toISOString().slice(0, 7);
+  
+  // Mês Seguinte (String YYYY-MM) 🆕
+  const nextDate = new Date(currentDate);
+  nextDate.setMonth(nextDate.getMonth() + 1);
+  const nextInvoiceMonth = nextDate.toISOString().slice(0, 7);
 
   // --- DADOS DO GRÁFICO ---
   const categoryData = useMemo(() => {
@@ -84,39 +93,52 @@ const Dashboard: React.FC<DashboardProps> = ({
     const safeAll = allTransactions || [];
     const safeMonthly = transactions || [];
 
-    const belongsToCurrentInvoice = (t: Transaction) => {
-      if (t.invoiceMonth) return t.invoiceMonth === currentInvoiceMonth;
+    // Helper genérico para filtrar por mês (Atual ou Próximo)
+    const filterByMonth = (t: Transaction, targetMonth: string) => {
+      if (t.invoiceMonth) return t.invoiceMonth === targetMonth;
       if (!t.date) return false;
       const [y, m, d] = t.date.split('-').map(Number);
       let tm = m, ty = y;
       if (d > closingDay) { tm++; if(tm>12){tm=1;ty++} }
-      return `${ty}-${String(tm).padStart(2, '0')}` === currentInvoiceMonth;
+      return `${ty}-${String(tm).padStart(2, '0')}` === targetMonth;
     };
 
-    // 1. NUBANK
-    const gastosNubankNoMes = safeAll
-      .filter(t => t.type === TransactionType.EXPENSE && t.paymentMethod === PaymentMethod.CREDIT_CARD && belongsToCurrentInvoice(t) && (t.cardType === 'Nubank' || !t.cardType))
+    // --- CÁLCULOS NUBANK ---
+    const gastosNubankAtual = safeAll
+      .filter(t => t.type === TransactionType.EXPENSE && t.paymentMethod === PaymentMethod.CREDIT_CARD && filterByMonth(t, currentInvoiceMonth) && (t.cardType === 'Nubank' || !t.cardType))
       .reduce((acc, curr) => acc + curr.amount, 0);
     
-    // Total Nubank = Valor Inicial Manual + Gastos Automáticos
-    const totalFaturaNubank = initialNubankBill + gastosNubankNoMes;
+    const gastosNubankProximo = safeAll
+      .filter(t => t.type === TransactionType.EXPENSE && t.paymentMethod === PaymentMethod.CREDIT_CARD && filterByMonth(t, nextInvoiceMonth) && (t.cardType === 'Nubank' || !t.cardType))
+      .reduce((acc, curr) => acc + curr.amount, 0);
 
-    // 2. PORTO SEGURO
-    const gastosPortoNoMes = safeAll
-      .filter(t => t.type === TransactionType.EXPENSE && t.paymentMethod === PaymentMethod.CREDIT_CARD && belongsToCurrentInvoice(t) && t.cardType === 'Porto')
+    const totalFaturaNubankAtual = initialNubankBill + gastosNubankAtual;
+    const totalFaturaNubankProxima = gastosNubankProximo; // Próxima começa do zero (gastos puros)
+
+    // --- CÁLCULOS PORTO ---
+    const gastosPortoAtual = safeAll
+      .filter(t => t.type === TransactionType.EXPENSE && t.paymentMethod === PaymentMethod.CREDIT_CARD && filterByMonth(t, currentInvoiceMonth) && t.cardType === 'Porto')
+      .reduce((acc, curr) => acc + curr.amount, 0);
+
+    const gastosPortoProximo = safeAll
+      .filter(t => t.type === TransactionType.EXPENSE && t.paymentMethod === PaymentMethod.CREDIT_CARD && filterByMonth(t, nextInvoiceMonth) && t.cardType === 'Porto')
       .reduce((acc, curr) => acc + curr.amount, 0);
     
-    // Total Porto = Valor Inicial Manual + Gastos Automáticos
-    const totalFaturaPorto = initialPortoBill + gastosPortoNoMes;
+    const totalFaturaPortoAtual = initialPortoBill + gastosPortoAtual;
+    const totalFaturaPortoProxima = gastosPortoProximo;
 
+    // --- TOTAIS GERAIS ---
     const receitas = safeMonthly.filter(t => t.type === TransactionType.INCOME).reduce((acc, curr) => acc + curr.amount, 0);
     const immediateExpenses = safeMonthly.filter(t => t.type === TransactionType.EXPENSE && t.paymentMethod !== PaymentMethod.CREDIT_CARD).reduce((acc, curr) => acc + curr.amount, 0);
     const pagamentosFatura = safeMonthly.filter(t => t.category === PAYMENT_CATEGORY).reduce((acc, curr) => acc + curr.amount, 0);
 
-    const totalCreditUsed = totalFaturaNubank + totalFaturaPorto;
+    // Soma do que está sendo exibido no card no momento
+    const valorExibidoNubank = nubankView === 'CURRENT' ? totalFaturaNubankAtual : totalFaturaNubankProxima;
+    const valorExibidoPorto = portoView === 'CURRENT' ? totalFaturaPortoAtual : totalFaturaPortoProxima;
+    const totalCreditUsed = valorExibidoNubank + valorExibidoPorto;
 
     const cardExpenses = safeAll
-      .filter(t => t.type === TransactionType.EXPENSE && t.paymentMethod === PaymentMethod.CREDIT_CARD && belongsToCurrentInvoice(t))
+      .filter(t => t.type === TransactionType.EXPENSE && t.paymentMethod === PaymentMethod.CREDIT_CARD && filterByMonth(t, currentInvoiceMonth))
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
       .slice(0, 3);
 
@@ -124,15 +146,26 @@ const Dashboard: React.FC<DashboardProps> = ({
       saldo: initialBalance + receitas - immediateExpenses - pagamentosFatura,
       receitas,
       despesasConta: immediateExpenses,
-      totalFaturaNubank,
-      gastosNubankNoMes,
-      totalFaturaPorto,
-      gastosPortoNoMes,
+      
+      // Valores Nubank
+      nubank: {
+        atual: totalFaturaNubankAtual,
+        proxima: totalFaturaNubankProxima,
+        gastosMes: gastosNubankAtual // Para calibração
+      },
+      
+      // Valores Porto
+      porto: {
+        atual: totalFaturaPortoAtual,
+        proxima: totalFaturaPortoProxima,
+        gastosMes: gastosPortoAtual // Para calibração
+      },
+
       limiteTotal: totalCreditLimit,
-      totalCreditUsed,
+      totalCreditUsed, // Soma dinâmica baseada na view
       cardExpenses
     };
-  }, [transactions, allTransactions, initialBalance, initialNubankBill, initialPortoBill, totalCreditLimit, currentInvoiceMonth, closingDay]);
+  }, [transactions, allTransactions, initialBalance, initialNubankBill, initialPortoBill, totalCreditLimit, currentInvoiceMonth, nextInvoiceMonth, closingDay, nubankView, portoView]);
 
   const categoryTransactions = useMemo(() => {
     if (!selectedCategory) return [];
@@ -143,6 +176,9 @@ const Dashboard: React.FC<DashboardProps> = ({
     if (!activeDetailType) return [];
     if (activeDetailType === 'INCOME') return transactions.filter(t => t.type === TransactionType.INCOME).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     if (activeDetailType === 'DEBIT') return transactions.filter(t => t.type === TransactionType.EXPENSE && t.paymentMethod !== PaymentMethod.CREDIT_CARD).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    
+    // Detalhes do Cartão seguem a visualização atual dos cards? 
+    // Para simplificar, o detalhe geral mostra o mês ATUAL selecionado no calendário
     if (activeDetailType === 'CREDIT') {
       const belongsToCurrentInvoice = (t: Transaction) => {
         if (t.invoiceMonth) return t.invoiceMonth === currentInvoiceMonth;
@@ -161,11 +197,8 @@ const Dashboard: React.FC<DashboardProps> = ({
   const handleSave = (t: Partial<Transaction>) => { onAddTransaction({ ...t, id: Math.random().toString(), createdAt: Date.now() } as any); };
   
   const openBalanceCalibration = () => { setCalibrationValue(stats.saldo.toFixed(2)); setIsBalanceCalibrating(true); };
-  
-  // ABRE CALIBRAÇÃO ESPECÍFICA
-  const openNubankCalibration = () => { setCalibrationValue(stats.totalFaturaNubank.toFixed(2)); setIsNubankCalibrating(true); };
-  const openPortoCalibration = () => { setCalibrationValue(stats.totalFaturaPorto.toFixed(2)); setIsPortoCalibrating(true); };
-  
+  const openNubankCalibration = () => { setCalibrationValue(stats.nubank.atual.toFixed(2)); setIsNubankCalibrating(true); };
+  const openPortoCalibration = () => { setCalibrationValue(stats.porto.atual.toFixed(2)); setIsPortoCalibrating(true); };
   const openLimitCalibration = () => { setCalibrationValue(totalCreditLimit.toString()); setIsLimitCalibrating(true); };
 
   const saveCalibration = () => {
@@ -176,16 +209,14 @@ const Dashboard: React.FC<DashboardProps> = ({
         onUpdateInitialBalance(val - currentNetMovement); 
     }
     
-    // LÓGICA DE CALIBRAÇÃO NUBANK (Engenharia Reversa)
     if (isNubankCalibrating) {
-        // NovoInicial = TotalDesejado - GastosDoMês
-        const novoInicial = val - stats.gastosNubankNoMes;
+        // Só calibra a fatura ATUAL. A próxima é automática.
+        const novoInicial = val - stats.nubank.gastosMes;
         onUpdateNubankBill(novoInicial);
     }
 
-    // LÓGICA DE CALIBRAÇÃO PORTO (Engenharia Reversa)
     if (isPortoCalibrating) {
-        const novoInicial = val - stats.gastosPortoNoMes;
+        const novoInicial = val - stats.porto.gastosMes;
         onUpdatePortoBill(novoInicial);
     }
 
@@ -229,38 +260,66 @@ const Dashboard: React.FC<DashboardProps> = ({
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
             {/* --- CARD NUBANK --- */}
-            <div className="bg-[#820ad1] p-6 rounded-[2rem] text-white relative overflow-hidden shadow-lg group hover:scale-[1.01] transition-all">
+            <div className={`p-6 rounded-[2rem] relative overflow-hidden shadow-lg transition-all ${nubankView === 'CURRENT' ? 'bg-[#820ad1] text-white group hover:scale-[1.01]' : 'bg-white border-2 border-[#820ad1] text-[#820ad1]'}`}>
                 <div className="flex justify-between items-start mb-4">
                     <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center text-xl">🟣</div>
-                        <div><h3 className="text-lg font-black leading-none">Nubank</h3><p className="text-[10px] font-bold opacity-60 uppercase">Principal</p></div>
+                        <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xl ${nubankView === 'CURRENT' ? 'bg-white/20' : 'bg-[#820ad1]/10'}`}>🟣</div>
+                        <div>
+                            <h3 className="text-lg font-black leading-none">Nubank</h3>
+                            <p className="text-[10px] font-bold opacity-60 uppercase">Principal</p>
+                        </div>
                     </div>
-                    {/* BOTÃO NUBANK (ENGRENAGEM INDEPENDENTE) */}
-                    <button onClick={openNubankCalibration} className="p-2 bg-white/10 rounded-lg hover:bg-white/20 transition-colors" title="Ajustar Valor">⚙️</button>
+                    <div className="flex gap-2">
+                        {/* TOGGLE VIEW */}
+                        <div className="bg-black/20 p-1 rounded-lg flex text-[10px] font-bold">
+                            <button onClick={() => setNubankView('CURRENT')} className={`px-2 py-1 rounded ${nubankView === 'CURRENT' ? 'bg-white text-[#820ad1]' : 'text-white/50 hover:text-white'}`}>Atual</button>
+                            <button onClick={() => setNubankView('NEXT')} className={`px-2 py-1 rounded ${nubankView === 'NEXT' ? 'bg-[#820ad1] text-white' : (nubankView === 'CURRENT' ? 'text-white/50 hover:text-white' : 'text-[#820ad1]/50')}`}>Próx</button>
+                        </div>
+                        {nubankView === 'CURRENT' && (
+                            <button onClick={openNubankCalibration} className="p-2 bg-white/10 rounded-lg hover:bg-white/20 transition-colors" title="Ajustar Valor">⚙️</button>
+                        )}
+                    </div>
                 </div>
-                <p className="text-[10px] font-bold opacity-60 uppercase tracking-widest mb-1">Fatura Atual (Aberta)</p>
-                <h2 className="text-4xl font-black mb-2">R$ {stats.totalFaturaNubank.toLocaleString('pt-BR')}</h2>
+                
+                <p className="text-[10px] font-bold opacity-60 uppercase tracking-widest mb-1">
+                    {nubankView === 'CURRENT' ? 'Fatura Atual (Aberta)' : 'Fatura Seguinte (Previsão)'}
+                </p>
+                <h2 className="text-4xl font-black mb-2">R$ {nubankView === 'CURRENT' ? stats.nubank.atual.toLocaleString('pt-BR') : stats.nubank.proxima.toLocaleString('pt-BR')}</h2>
                 <p className="text-[10px] opacity-50">Vencimento dia 13</p>
             </div>
 
             {/* --- CARD PORTO SEGURO --- */}
-            <div className="bg-[#00a1fc] p-6 rounded-[2rem] text-white relative overflow-hidden shadow-lg group hover:scale-[1.01] transition-all">
+            <div className={`p-6 rounded-[2rem] relative overflow-hidden shadow-lg transition-all ${portoView === 'CURRENT' ? 'bg-[#00a1fc] text-white group hover:scale-[1.01]' : 'bg-white border-2 border-[#00a1fc] text-[#00a1fc]'}`}>
                 <div className="flex justify-between items-start mb-4">
                     <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center text-xl">🔵</div>
-                        <div><h3 className="text-lg font-black leading-none">Porto Seguro</h3><p className="text-[10px] font-bold opacity-60 uppercase">Secundário</p></div>
+                        <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xl ${portoView === 'CURRENT' ? 'bg-white/20' : 'bg-[#00a1fc]/10'}`}>🔵</div>
+                        <div>
+                            <h3 className="text-lg font-black leading-none">Porto Seguro</h3>
+                            <p className="text-[10px] font-bold opacity-60 uppercase">Secundário</p>
+                        </div>
                     </div>
-                    {/* BOTÃO PORTO (ENGRENAGEM INDEPENDENTE) */}
-                    <button onClick={openPortoCalibration} className="p-2 bg-white/10 rounded-lg hover:bg-white/20 transition-colors" title="Ajustar Valor">⚙️</button>
+                    <div className="flex gap-2">
+                        {/* TOGGLE VIEW */}
+                        <div className="bg-black/20 p-1 rounded-lg flex text-[10px] font-bold">
+                            <button onClick={() => setPortoView('CURRENT')} className={`px-2 py-1 rounded ${portoView === 'CURRENT' ? 'bg-white text-[#00a1fc]' : 'text-white/50 hover:text-white'}`}>Atual</button>
+                            <button onClick={() => setPortoView('NEXT')} className={`px-2 py-1 rounded ${portoView === 'NEXT' ? 'bg-[#00a1fc] text-white' : (portoView === 'CURRENT' ? 'text-white/50 hover:text-white' : 'text-[#00a1fc]/50')}`}>Próx</button>
+                        </div>
+                        {portoView === 'CURRENT' && (
+                            <button onClick={openPortoCalibration} className="p-2 bg-white/10 rounded-lg hover:bg-white/20 transition-colors" title="Ajustar Valor">⚙️</button>
+                        )}
+                    </div>
                 </div>
-                <p className="text-[10px] font-bold opacity-60 uppercase tracking-widest mb-1">Fatura Atual (Aberta)</p>
-                <h2 className="text-4xl font-black mb-2">R$ {stats.totalFaturaPorto.toLocaleString('pt-BR')}</h2>
-                <p className="text-[10px] opacity-50">Vencimento dia 05</p> {/* DATA ATUALIZADA AQUI ✅ */}
+                
+                <p className="text-[10px] font-bold opacity-60 uppercase tracking-widest mb-1">
+                    {portoView === 'CURRENT' ? 'Fatura Atual (Aberta)' : 'Fatura Seguinte (Previsão)'}
+                </p>
+                <h2 className="text-4xl font-black mb-2">R$ {portoView === 'CURRENT' ? stats.porto.atual.toLocaleString('pt-BR') : stats.porto.proxima.toLocaleString('pt-BR')}</h2>
+                <p className="text-[10px] opacity-50">Vencimento dia 05</p>
             </div>
         </div>
 
         <div>
-          <h4 className="text-[10px] font-black text-[#521256] opacity-40 uppercase tracking-widest mb-4">Últimas Compras no Crédito</h4>
+          <h4 className="text-[10px] font-black text-[#521256] opacity-40 uppercase tracking-widest mb-4">Últimas Compras no Crédito (Mês Atual)</h4>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {stats.cardExpenses.map((t) => (
               <div key={t.id} className="bg-[#efd2fe]/30 p-4 rounded-2xl border border-white/50 flex items-center justify-between hover:bg-white transition-colors cursor-pointer group">
