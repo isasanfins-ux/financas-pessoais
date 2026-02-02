@@ -9,32 +9,28 @@ interface HistoryProps {
   onDeleteTransaction: (id: string) => void;
   categories: string[];
   onOpenCategoryManager: () => void;
+  currentDate?: Date; // Opcional para não quebrar se esquecer
 }
 
 const History: React.FC<HistoryProps> = ({ 
-  transactions, onAddTransaction, onUpdateTransaction, onDeleteTransaction, categories, onOpenCategoryManager
+  transactions, onAddTransaction, onUpdateTransaction, onDeleteTransaction, categories, onOpenCategoryManager, currentDate
 }) => {
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
-  
-  // ESTADOS NOVOS PARA BOTÕES DE ADICIONAR E FILTRO
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [addModalType, setAddModalType] = useState<TransactionType>(TransactionType.EXPENSE);
   const [filterType, setFilterType] = useState<'ALL' | 'INCOME' | 'EXPENSE'>('ALL');
 
-  // 1. PRIMEIRO FILTRA
   const filteredTransactions = useMemo(() => {
     if (filterType === 'ALL') return transactions;
     return transactions.filter(t => t.type === filterType);
   }, [transactions, filterType]);
 
-  // 2. DEPOIS AGRUPA (USANDO OS FILTRADOS)
   const groupedTransactions = useMemo(() => {
     const groups: { [date: string]: Transaction[] } = {};
     filteredTransactions.forEach(t => {
       if (!groups[t.date]) groups[t.date] = [];
       groups[t.date].push(t);
     });
-    // Ordenar datas (decrescente)
     return Object.entries(groups).sort((a, b) => new Date(b[0]).getTime() - new Date(a[0]).getTime());
   }, [filteredTransactions]);
 
@@ -45,7 +41,6 @@ const History: React.FC<HistoryProps> = ({
     }
   };
 
-  // Função para salvar NOVO lançamento vindo dessa tela
   const handleSaveNew = (t: Partial<Transaction>) => {
     onAddTransaction({ ...t, id: Math.random().toString(), createdAt: Date.now() } as any);
   };
@@ -61,50 +56,28 @@ const History: React.FC<HistoryProps> = ({
     setIsAddModalOpen(true);
   };
 
+  // Garante uma data segura (Hoje) se currentDate não vier
+  const safeDate = currentDate ? currentDate.toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
+
   return (
     <div className="space-y-6 animate-in fade-in duration-500 pb-20">
-      
-      {/* --- CABEÇALHO COM BOTÕES DE ADICIONAR --- */}
       <div className="flex flex-col md:flex-row justify-between items-center gap-4 px-2">
         <div className="w-full md:w-auto">
             <h2 className="text-2xl font-black text-[#521256]">Extrato 📜</h2>
             <p className="text-xs font-bold text-[#f170c3]">{filteredTransactions.length} lançamentos</p>
         </div>
-        
-        {/* Botões de Ação Restaurados! */}
         <div className="flex gap-3 w-full md:w-auto">
-            <button onClick={() => openAddModal(TransactionType.INCOME)} className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-3 bg-[#e2e585] text-[#521256] rounded-xl font-black text-xs shadow-md hover:scale-105 transition-all">
-                <span>+</span> Receita
-            </button>
-            <button onClick={() => openAddModal(TransactionType.EXPENSE)} className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-3 bg-[#f170c3] text-white rounded-xl font-black text-xs shadow-md hover:scale-105 transition-all">
-                <span>-</span> Despesa
-            </button>
+            <button onClick={() => openAddModal(TransactionType.INCOME)} className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-3 bg-[#e2e585] text-[#521256] rounded-xl font-black text-xs shadow-md hover:scale-105 transition-all"><span>+</span> Receita</button>
+            <button onClick={() => openAddModal(TransactionType.EXPENSE)} className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-3 bg-[#f170c3] text-white rounded-xl font-black text-xs shadow-md hover:scale-105 transition-all"><span>-</span> Despesa</button>
         </div>
       </div>
 
-      {/* --- FILTRO (TODOS | ENTRADAS | SAÍDAS) --- */}
       <div className="flex p-1 bg-[#efd2fe]/30 rounded-xl mx-2">
-        <button 
-            onClick={() => setFilterType('ALL')}
-            className={`flex-1 py-2 rounded-lg text-xs font-black transition-all ${filterType === 'ALL' ? 'bg-white text-[#521256] shadow-sm' : 'text-[#521256]/50 hover:bg-white/50'}`}
-        >
-            Todos
-        </button>
-        <button 
-            onClick={() => setFilterType('INCOME')}
-            className={`flex-1 py-2 rounded-lg text-xs font-black transition-all ${filterType === 'INCOME' ? 'bg-white text-green-600 shadow-sm' : 'text-[#521256]/50 hover:bg-white/50'}`}
-        >
-            Entradas
-        </button>
-        <button 
-            onClick={() => setFilterType('EXPENSE')}
-            className={`flex-1 py-2 rounded-lg text-xs font-black transition-all ${filterType === 'EXPENSE' ? 'bg-white text-red-500 shadow-sm' : 'text-[#521256]/50 hover:bg-white/50'}`}
-        >
-            Saídas
-        </button>
+        <button onClick={() => setFilterType('ALL')} className={`flex-1 py-2 rounded-lg text-xs font-black transition-all ${filterType === 'ALL' ? 'bg-white text-[#521256] shadow-sm' : 'text-[#521256]/50 hover:bg-white/50'}`}>Todos</button>
+        <button onClick={() => setFilterType('INCOME')} className={`flex-1 py-2 rounded-lg text-xs font-black transition-all ${filterType === 'INCOME' ? 'bg-white text-green-600 shadow-sm' : 'text-[#521256]/50 hover:bg-white/50'}`}>Entradas</button>
+        <button onClick={() => setFilterType('EXPENSE')} className={`flex-1 py-2 rounded-lg text-xs font-black transition-all ${filterType === 'EXPENSE' ? 'bg-white text-red-500 shadow-sm' : 'text-[#521256]/50 hover:bg-white/50'}`}>Saídas</button>
       </div>
 
-      {/* --- LISTA DE LANÇAMENTOS --- */}
       {filteredTransactions.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 text-center opacity-50">
             <div className="text-6xl mb-4">📭</div>
@@ -143,12 +116,7 @@ const History: React.FC<HistoryProps> = ({
                         <p className={`font-black text-sm ${t.type === TransactionType.INCOME ? 'text-green-600' : 'text-[#521256]'}`}>
                         {t.type === TransactionType.INCOME ? '+' : '-'} R$ {t.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                         </p>
-                        <button 
-                            onClick={(e) => { e.stopPropagation(); handleDelete(t.id); }}
-                            className="text-[10px] text-red-400 font-bold hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity mt-1"
-                        >
-                            EXCLUIR
-                        </button>
+                        <button onClick={(e) => { e.stopPropagation(); handleDelete(t.id); }} className="text-[10px] text-red-400 font-bold hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity mt-1">EXCLUIR</button>
                     </div>
                     </div>
                 ))}
@@ -158,7 +126,6 @@ const History: React.FC<HistoryProps> = ({
         </div>
       )}
 
-      {/* MODAL DE EDIÇÃO */}
       {editingTransaction && (
         <TransactionModal
           isOpen={!!editingTransaction}
@@ -171,7 +138,6 @@ const History: React.FC<HistoryProps> = ({
         />
       )}
 
-      {/* MODAL DE ADICIONAR (NOVO) */}
       <TransactionModal
           isOpen={isAddModalOpen}
           onClose={() => setIsAddModalOpen(false)}
@@ -179,6 +145,7 @@ const History: React.FC<HistoryProps> = ({
           type={addModalType}
           availableCategories={categories}
           onOpenCategoryManager={onOpenCategoryManager}
+          defaultDate={safeDate} // <--- DATA CORRETA AQUI
         />
     </div>
   );
