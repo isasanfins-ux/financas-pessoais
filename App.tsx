@@ -7,7 +7,6 @@ import Planning from './components/Planning';
 import Investments from './components/Investments';
 import Reports from './components/Reports';
 import Market from './components/Market'; 
-// import ChatAssistant removido daqui! 👋
 import CategoryManagerModal from './components/CategoryManagerModal';
 import MonthSelector from './components/MonthSelector';
 import { Transaction, CategoryBudget, InvestmentTransaction, User, MarketItem } from './types';
@@ -182,32 +181,51 @@ const App: React.FC = () => {
 
   const handleLogout = async () => { await signOut(auth); setIsSettingsOpen(false); };
   
+  // --- FUNÇÃO ATUALIZADA COM A LÓGICA DE PARCELAS ---
   const addTransaction = async (t: Omit<Transaction, 'id'>) => { 
     if (!currentUser) return; 
+
     if (t.isRecurring) {
+        // Lógica de repetição inteligente (COM PARCELAS AGORA!)
         const startDate = new Date(t.date + 'T12:00:00');
         let startInvoiceDate = t.invoiceMonth ? new Date(t.invoiceMonth + '-02') : null;
+
+        // Se não definiu fatura manual, tenta adivinhar a primeira
         if (!startInvoiceDate && t.type === 'EXPENSE' && t.paymentMethod === 'Cartão de Crédito') {
            const day = startDate.getDate();
            if (day > closingDay) startDate.setMonth(startDate.getMonth() + 1);
            startInvoiceDate = startDate;
         }
+
         for (let i = 0; i < 12; i++) {
             const futureDate = new Date(startDate); 
+            // Avança a Data da Compra
             futureDate.setMonth(new Date(t.date + 'T12:00:00').getMonth() + i);
             const isoDate = futureDate.toISOString().split('T')[0];
+
             let futureInvoiceMonth = undefined;
             if (startInvoiceDate) {
                const fInvoice = new Date(startInvoiceDate); 
+               // Avança a Fatura de Referência
                fInvoice.setMonth(startInvoiceDate.getMonth() + i);
                futureInvoiceMonth = fInvoice.toISOString().slice(0, 7); 
             }
-            await addDoc(collection(db, "transactions"), { ...t, date: isoDate, invoiceMonth: futureInvoiceMonth, uid: currentUser.id, createdAt: Date.now() + i });
+
+            await addDoc(collection(db, "transactions"), { 
+                ...t, 
+                date: isoDate, 
+                invoiceMonth: futureInvoiceMonth,
+                uid: currentUser.id,
+                installment: { current: i + 1, total: 12 }, // <--- A MÁGICA ACONTECE AQUI!
+                createdAt: Date.now() + i 
+            });
         }
-        alert("Lançamento fixo criado para os próximos 12 meses! 🗓️✨");
+        alert("Lançamento parcelado criado para os próximos 12 meses! 🗓️✨");
     } else {
+        // Lançamento único (mantém o parcelamento se tiver sido editado na mão)
         await addDoc(collection(db, "transactions"), { ...t, uid: currentUser.id });
     }
+
     if (!categories.includes(t.category)) {
         await addDoc(collection(db, "categories"), { name: t.category, uid: currentUser.id });
     }
@@ -222,6 +240,7 @@ const App: React.FC = () => {
   const deleteMarketItem = async (id: string) => deleteDoc(doc(db, "market_items", id));
   const updBudg = async (c: string, l: number) => { if(!currentUser) return; const ex = budgets.find(b => b.category === c); if(ex?.id) { await updateDoc(doc(db, "budgets", ex.id), { limit: l }); } else { await addDoc(collection(db, "budgets"), { category: c, limit: l, uid: currentUser.id, month: currentDate.getMonth(), year: currentDate.getFullYear() }); }};
   const delBudg = async (category: string) => { if(!currentUser) return; const ex = budgets.find(b => b.category === category); if(ex?.id) await deleteDoc(doc(db, "budgets", ex.id)); };
+  
   const resetAllData = async () => {
     if (!currentUser) return;
     const collectionsToClear = ["transactions", "categories", "budgets", "goals", "investment_transactions", "market_items"];
@@ -323,8 +342,6 @@ const App: React.FC = () => {
       )}
       
       {isResetConfirmOpen && ( <div className="fixed inset-0 bg-red-600/80 z-[250] flex items-center justify-center p-4"> <div className="bg-white p-8 rounded-2xl text-center"> <h3 className="font-black text-xl mb-4">Tem certeza?</h3> <button onClick={resetAllData} className="bg-red-600 text-white px-6 py-3 rounded-xl font-bold">Sim, apagar tudo</button> <button onClick={() => setIsResetConfirmOpen(false)} className="ml-4 text-gray-500 font-bold">Cancelar</button> </div> </div> )}
-      
-      {/* CHAT REMOVIDO DAQUI! 🧹 */}
     </Layout>
   );
 };
