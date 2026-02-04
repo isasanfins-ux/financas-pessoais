@@ -11,7 +11,7 @@ interface TransactionModalProps {
   onAddCategory?: (name: string) => void;
   onOpenCategoryManager?: () => void;
   closingDay?: number;
-  defaultDate?: string; // Agora é opcional e seguro
+  defaultDate?: string;
 }
 
 const TransactionModal: React.FC<TransactionModalProps> = ({ 
@@ -20,7 +20,6 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
   const [category, setCategory] = useState('');
-  // Garante que sempre tenha uma data válida (Se defaultDate vier vazio, usa Hoje)
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(PaymentMethod.PIX);
   
@@ -30,14 +29,12 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
   const [newCategory, setNewCategory] = useState('');
   const [isAddingCategory, setIsAddingCategory] = useState(false);
 
-  // Campos de parcela
+  // Parcelas
   const [currentInstallment, setCurrentInstallment] = useState(1);
   const [totalInstallments, setTotalInstallments] = useState(1);
 
   const calculateInvoiceMonth = (purchaseDate: string) => {
-    // Proteção contra data inválida
     if (!purchaseDate) return new Date().toISOString().slice(0, 7);
-    
     const pDate = new Date(purchaseDate + 'T12:00:00');
     const day = pDate.getDate();
     if (day > closingDay) { pDate.setMonth(pDate.getMonth() + 1); }
@@ -65,12 +62,12 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
             setTotalInstallments(1);
         }
       } else {
-        // MODO NOVO LANÇAMENTO
+        // MODO NOVO
         setDescription('');
         setAmount('');
         setCategory('');
         
-        // A Lógica Inteligente: Usa a data sugerida ou Hoje
+        // Usa a data sugerida (Extrato) ou Hoje (Dashboard)
         const baseDate = defaultDate || new Date().toISOString().split('T')[0];
         setDate(baseDate);
         
@@ -84,16 +81,19 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
     }
   }, [isOpen, initialData, closingDay, defaultDate]);
 
-  // Atualiza fatura sugerida ao mudar data manualmente
   useEffect(() => {
     if (!initialData && date) { setInvoiceMonth(calculateInvoiceMonth(date)); }
   }, [date, closingDay]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Tratamento simples do valor
+    const val = parseFloat(amount.toString().replace(',', '.'));
+
     onSave({
       description,
-      amount: parseFloat(amount.replace(',', '.')),
+      amount: isNaN(val) ? 0 : val, // Se der erro, salva 0 em vez de travar
       category,
       type,
       paymentMethod,
@@ -115,7 +115,7 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
       <div className="bg-white rounded-[2.5rem] w-full max-w-md p-8 shadow-2xl animate-in zoom-in duration-300 max-h-[90vh] overflow-y-auto">
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-2xl font-black text-[#521256]">
-            {initialData ? 'Editar ✏️' : (type === 'INCOME' ? 'Nova Receita 🤑' : 'Nova Despesa 💸')}
+            {initialData ? 'Editar ✏️' : (type === TransactionType.INCOME ? 'Nova Receita 🤑' : 'Nova Despesa 💸')}
           </h2>
           <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full transition-colors"><svg className="w-6 h-6 text-[#521256]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg></button>
         </div>
@@ -137,7 +137,7 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
             </div>
           </div>
 
-          {type === 'EXPENSE' && (
+          {type === TransactionType.EXPENSE && (
             <div>
               <label className="text-[10px] font-black opacity-40 uppercase tracking-widest ml-1">Pagamento</label>
               <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value as PaymentMethod)} className="w-full px-4 py-3 bg-[#efd2fe]/30 rounded-xl font-bold text-[#521256] text-sm focus:outline-none focus:ring-2 focus:ring-[#f170c3]">
@@ -146,7 +146,7 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
             </div>
           )}
 
-          {type === 'EXPENSE' && paymentMethod === PaymentMethod.CREDIT_CARD && (
+          {type === TransactionType.EXPENSE && paymentMethod === PaymentMethod.CREDIT_CARD && (
              <div className="bg-[#efd2fe]/40 p-4 rounded-xl animate-in slide-in-from-top-2 border border-[#f170c3]/20">
                 <label className="text-[10px] font-black text-[#521256]/60 uppercase tracking-widest mb-2 block">Qual Cartão?</label>
                 <div className="flex gap-3 mb-4">
