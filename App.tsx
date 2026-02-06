@@ -148,47 +148,67 @@ const App: React.FC = () => {
     return () => { unsubTrans(); unsubCats(); unsubBudgets(); unsubInv(); unsubMarket(); unsubSettings(); };
   }, [currentUser, currentDate]);
 
-  // Função BLINDADA contra o bug do telefone sem fio
   const updSet = async (u: any) => currentUser && setDoc(doc(db, "settings", currentUser.id), { ...u, uid: currentUser.id }, { merge: true });
 
   const handleSaveProfile = async () => { /* Mantido */ };
   const handleLogout = async () => { await signOut(auth); setIsSettingsOpen(false); };
   
+  // --- AQUI ESTÁ A NOVA FUNÇÃO BLINDADA 🛡️ ---
   const addTransaction = async (t: Omit<Transaction, 'id'>) => { 
     if (!currentUser) return; 
-    if (t.isRecurring) {
-        const startDate = new Date(t.date + 'T12:00:00');
-        let startInvoiceDate = t.invoiceMonth ? new Date(t.invoiceMonth + '-02') : null;
-        if (!startInvoiceDate && t.type === 'EXPENSE' && t.paymentMethod === 'Cartão de Crédito') {
-           const day = startDate.getDate();
-           if (day > closingDay) startDate.setMonth(startDate.getMonth() + 1);
-           startInvoiceDate = startDate;
-        }
-        for (let i = 0; i < 12; i++) {
-            const futureDate = new Date(startDate); 
-            futureDate.setMonth(new Date(t.date + 'T12:00:00').getMonth() + i);
-            const isoDate = futureDate.toISOString().split('T')[0];
-            let futureInvoiceMonth = undefined;
-            if (startInvoiceDate) {
-               const fInvoice = new Date(startInvoiceDate); 
-               fInvoice.setMonth(startInvoiceDate.getMonth() + i);
-               futureInvoiceMonth = fInvoice.toISOString().slice(0, 7); 
+
+    // 1. LIMPEZA DE DADOS (Garante que nada inválido vá pro banco)
+    const cleanTransaction = {
+        ...t,
+        amount: Number(t.amount) || 0, // FORÇA virar número. Se der erro, vira 0.
+        uid: currentUser.id
+    };
+
+    try {
+        if (t.isRecurring) {
+            const startDate = new Date(t.date + 'T12:00:00');
+            let startInvoiceDate = t.invoiceMonth ? new Date(t.invoiceMonth + '-02') : null;
+
+            if (!startInvoiceDate && t.type === 'EXPENSE' && t.paymentMethod === 'Cartão de Crédito') {
+               const day = startDate.getDate();
+               if (day > closingDay) startDate.setMonth(startDate.getMonth() + 1);
+               startInvoiceDate = startDate;
             }
-            await addDoc(collection(db, "transactions"), { 
-                ...t, 
-                date: isoDate, 
-                invoiceMonth: futureInvoiceMonth,
-                uid: currentUser.id,
-                installment: { current: i + 1, total: 12 },
-                createdAt: Date.now() + i 
-            });
+
+            for (let i = 0; i < 12; i++) {
+                const futureDate = new Date(startDate); 
+                futureDate.setMonth(new Date(t.date + 'T12:00:00').getMonth() + i);
+                const isoDate = futureDate.toISOString().split('T')[0];
+
+                let futureInvoiceMonth = undefined;
+                if (startInvoiceDate) {
+                   const fInvoice = new Date(startInvoiceDate); 
+                   fInvoice.setMonth(startInvoiceDate.getMonth() + i);
+                   futureInvoiceMonth = fInvoice.toISOString().slice(0, 7); 
+                }
+
+                await addDoc(collection(db, "transactions"), { 
+                    ...cleanTransaction, // Usa a versão limpa e segura
+                    date: isoDate, 
+                    invoiceMonth: futureInvoiceMonth,
+                    installment: { current: i + 1, total: 12 },
+                    createdAt: Date.now() + i 
+                });
+            }
+            alert("Lançamento parcelado criado para os próximos 12 meses! 🗓️✨");
+        } else {
+            // Lançamento Único (Usa a versão limpa)
+            await addDoc(collection(db, "transactions"), cleanTransaction);
         }
-        alert("Lançamento parcelado criado para os próximos 12 meses! 🗓️✨");
-    } else {
-        await addDoc(collection(db, "transactions"), { ...t, uid: currentUser.id });
-    }
-    if (!categories.includes(t.category)) {
-        await addDoc(collection(db, "categories"), { name: t.category, uid: currentUser.id });
+
+        if (!categories.includes(t.category)) {
+            await addDoc(collection(db, "categories"), { name: t.category, uid: currentUser.id });
+        }
+
+    } catch (error) {
+        // SE DER ERRO, VAI AVISAR AGORA!
+        console.error("Erro ao salvar:", error);
+        alert("ERRO AO SALVAR: " + error);
     }
   };
 
@@ -250,7 +270,7 @@ const App: React.FC = () => {
                 onDeleteTransaction={deleteTransaction}
                 categories={categories}
                 onOpenCategoryManager={() => setIsCatManagerOpen(true)}
-                currentDate={currentDate} // <--- AQUI! ISSO FAZ O MODAL SABER O MÊS CERTO!
+                currentDate={currentDate} 
               />
             </div>
           )}
