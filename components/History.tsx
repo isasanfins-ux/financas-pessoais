@@ -9,7 +9,7 @@ interface HistoryProps {
   onDeleteTransaction: (id: string) => void;
   categories: string[];
   onOpenCategoryManager: () => void;
-  currentDate?: Date; // Opcional para não quebrar se esquecer
+  currentDate: Date; 
 }
 
 const History: React.FC<HistoryProps> = ({ 
@@ -25,12 +25,21 @@ const History: React.FC<HistoryProps> = ({
     return transactions.filter(t => t.type === filterType);
   }, [transactions, filterType]);
 
+  // --- AQUI ESTÁ A MÁGICA DA ORGANIZAÇÃO! ✨ ---
   const groupedTransactions = useMemo(() => {
     const groups: { [date: string]: Transaction[] } = {};
     filteredTransactions.forEach(t => {
       if (!groups[t.date]) groups[t.date] = [];
       groups[t.date].push(t);
     });
+
+    // 1. Organiza os itens DENTRO de cada dia
+    // Quem foi criado por último (agora) fica em cima na lista do dia!
+    Object.keys(groups).forEach(date => {
+        groups[date].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    });
+
+    // 2. Organiza os dias (Futuro -> Passado)
     return Object.entries(groups).sort((a, b) => new Date(b[0]).getTime() - new Date(a[0]).getTime());
   }, [filteredTransactions]);
 
@@ -56,11 +65,11 @@ const History: React.FC<HistoryProps> = ({
     setIsAddModalOpen(true);
   };
 
-  // Garante uma data segura (Hoje) se currentDate não vier
   const safeDate = currentDate ? currentDate.toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500 pb-20">
+      
       <div className="flex flex-col md:flex-row justify-between items-center gap-4 px-2">
         <div className="w-full md:w-auto">
             <h2 className="text-2xl font-black text-[#521256]">Extrato 📜</h2>
@@ -145,7 +154,7 @@ const History: React.FC<HistoryProps> = ({
           type={addModalType}
           availableCategories={categories}
           onOpenCategoryManager={onOpenCategoryManager}
-          defaultDate={safeDate} // <--- DATA CORRETA AQUI
+          defaultDate={safeDate}
         />
     </div>
   );
