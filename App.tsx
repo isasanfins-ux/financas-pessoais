@@ -153,11 +153,20 @@ const App: React.FC = () => {
   const handleSaveProfile = async () => { /* Mantido */ };
   const handleLogout = async () => { await signOut(auth); setIsSettingsOpen(false); };
   
-  // --- FUNÇÃO BLINDADA E COM LIMPEZA DE DADOS 🧹 ---
+  // --- NOVA FUNÇÃO PARA ADICIONAR CATEGORIA RÁPIDA ---
+  const handleQuickAddCategory = async (name: string) => {
+    if (!currentUser) return;
+    // Verifica se a categoria já existe para não duplicar (embora o Set já ajude no visual)
+    if (!categories.includes(name)) {
+        await addDoc(collection(db, "categories"), { name, uid: currentUser.id });
+    }
+  };
+
+  // --- FUNÇÃO BLINDADA (Resolvendo erro de undefined e salvando categoria nova) ---
   const addTransaction = async (t: Omit<Transaction, 'id'>) => { 
     if (!currentUser) return; 
 
-    // Remove campos undefined (o vilão do seu print!)
+    // LIMPEZA: Remove campos undefined (Evita o erro do seu print!)
     const cleanT = JSON.parse(JSON.stringify(t));
 
     try {
@@ -183,7 +192,7 @@ const App: React.FC = () => {
                    futureInvoiceMonth = fInvoice.toISOString().slice(0, 7); 
                 }
 
-                // Limpa de novo só pra garantir nas variáveis calculadas
+                // Limpa de novo para garantir nas variáveis calculadas
                 const payload = JSON.parse(JSON.stringify({ 
                     ...cleanT, 
                     date: isoDate, 
@@ -197,17 +206,18 @@ const App: React.FC = () => {
             }
             alert("Lançamento parcelado criado para os próximos 12 meses! 🗓️✨");
         } else {
-            // Lançamento Único (Livre de undefined!)
+            // Lançamento Único
             await addDoc(collection(db, "transactions"), { ...cleanT, uid: currentUser.id });
         }
 
+        // Salva a categoria se ela for nova (segurança extra, caso o handleQuickAddCategory falhe ou não seja chamado a tempo)
         if (!categories.includes(cleanT.category)) {
             await addDoc(collection(db, "categories"), { name: cleanT.category, uid: currentUser.id });
         }
         
     } catch (error: any) {
         console.error("Erro detalhado:", error);
-        alert(`Não foi possível salvar: ${error.message}`);
+        alert(`Erro ao salvar: ${error.message}`);
     }
   };
 
@@ -252,6 +262,8 @@ const App: React.FC = () => {
                 onUpdateTotalCreditLimit={(v) => updSet({ totalCreditLimit: v })}
                 onUpdateNextMonthInvoice={(v) => updSet({ nextMonthInvoice: v })}
                 closingDay={closingDay}
+                // PASSEI A FUNÇÃO NOVA AQUI! 👇
+                onAddCategory={handleQuickAddCategory} 
               />
             </div>
           )}
@@ -269,7 +281,7 @@ const App: React.FC = () => {
                 onDeleteTransaction={deleteTransaction}
                 categories={categories}
                 onOpenCategoryManager={() => setIsCatManagerOpen(true)}
-                currentDate={currentDate} // <--- AQUI ESTAVA FALTANDO, AGORA ESTÁ PRESENTE!
+                currentDate={currentDate} 
               />
             </div>
           )}
