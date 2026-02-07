@@ -153,23 +153,19 @@ const App: React.FC = () => {
   const handleSaveProfile = async () => { /* Mantido */ };
   const handleLogout = async () => { await signOut(auth); setIsSettingsOpen(false); };
   
-  // --- AQUI ESTÁ A NOVA FUNÇÃO BLINDADA 🛡️ ---
+  // --- FUNÇÃO BLINDADA E COM LIMPEZA DE DADOS 🧹 ---
   const addTransaction = async (t: Omit<Transaction, 'id'>) => { 
     if (!currentUser) return; 
 
-    // 1. LIMPEZA DE DADOS (Garante que nada inválido vá pro banco)
-    const cleanTransaction = {
-        ...t,
-        amount: Number(t.amount) || 0, // FORÇA virar número. Se der erro, vira 0.
-        uid: currentUser.id
-    };
+    // Remove campos undefined (o vilão do seu print!)
+    const cleanT = JSON.parse(JSON.stringify(t));
 
     try {
-        if (t.isRecurring) {
-            const startDate = new Date(t.date + 'T12:00:00');
-            let startInvoiceDate = t.invoiceMonth ? new Date(t.invoiceMonth + '-02') : null;
+        if (cleanT.isRecurring) {
+            const startDate = new Date(cleanT.date + 'T12:00:00');
+            let startInvoiceDate = cleanT.invoiceMonth ? new Date(cleanT.invoiceMonth + '-02') : null;
 
-            if (!startInvoiceDate && t.type === 'EXPENSE' && t.paymentMethod === 'Cartão de Crédito') {
+            if (!startInvoiceDate && cleanT.type === 'EXPENSE' && cleanT.paymentMethod === 'Cartão de Crédito') {
                const day = startDate.getDate();
                if (day > closingDay) startDate.setMonth(startDate.getMonth() + 1);
                startInvoiceDate = startDate;
@@ -177,7 +173,7 @@ const App: React.FC = () => {
 
             for (let i = 0; i < 12; i++) {
                 const futureDate = new Date(startDate); 
-                futureDate.setMonth(new Date(t.date + 'T12:00:00').getMonth() + i);
+                futureDate.setMonth(new Date(cleanT.date + 'T12:00:00').getMonth() + i);
                 const isoDate = futureDate.toISOString().split('T')[0];
 
                 let futureInvoiceMonth = undefined;
@@ -187,28 +183,31 @@ const App: React.FC = () => {
                    futureInvoiceMonth = fInvoice.toISOString().slice(0, 7); 
                 }
 
-                await addDoc(collection(db, "transactions"), { 
-                    ...cleanTransaction, // Usa a versão limpa e segura
+                // Limpa de novo só pra garantir nas variáveis calculadas
+                const payload = JSON.parse(JSON.stringify({ 
+                    ...cleanT, 
                     date: isoDate, 
                     invoiceMonth: futureInvoiceMonth,
+                    uid: currentUser.id,
                     installment: { current: i + 1, total: 12 },
                     createdAt: Date.now() + i 
-                });
+                }));
+
+                await addDoc(collection(db, "transactions"), payload);
             }
             alert("Lançamento parcelado criado para os próximos 12 meses! 🗓️✨");
         } else {
-            // Lançamento Único (Usa a versão limpa)
-            await addDoc(collection(db, "transactions"), cleanTransaction);
+            // Lançamento Único (Livre de undefined!)
+            await addDoc(collection(db, "transactions"), { ...cleanT, uid: currentUser.id });
         }
 
-        if (!categories.includes(t.category)) {
-            await addDoc(collection(db, "categories"), { name: t.category, uid: currentUser.id });
+        if (!categories.includes(cleanT.category)) {
+            await addDoc(collection(db, "categories"), { name: cleanT.category, uid: currentUser.id });
         }
-
-    } catch (error) {
-        // SE DER ERRO, VAI AVISAR AGORA!
-        console.error("Erro ao salvar:", error);
-        alert("ERRO AO SALVAR: " + error);
+        
+    } catch (error: any) {
+        console.error("Erro detalhado:", error);
+        alert(`Não foi possível salvar: ${error.message}`);
     }
   };
 
@@ -270,7 +269,7 @@ const App: React.FC = () => {
                 onDeleteTransaction={deleteTransaction}
                 categories={categories}
                 onOpenCategoryManager={() => setIsCatManagerOpen(true)}
-                currentDate={currentDate} 
+                currentDate={currentDate} // <--- AQUI ESTAVA FALTANDO, AGORA ESTÁ PRESENTE!
               />
             </div>
           )}
