@@ -153,6 +153,7 @@ const App: React.FC = () => {
   const handleSaveProfile = async () => { /* Mantido */ };
   const handleLogout = async () => { await signOut(auth); setIsSettingsOpen(false); };
   
+  // --- FUNÇÃO ADICIONADA: Salvar categoria nova ---
   const handleQuickAddCategory = async (name: string) => {
     if (!currentUser) return;
     if (!categories.includes(name)) {
@@ -160,66 +161,11 @@ const App: React.FC = () => {
     }
   };
 
-  // --- NOVAS FUNÇÕES PARA GERENCIAR CATEGORIAS 🛠️ ---
-  const handleRenameCategory = async (oldName: string, newName: string) => {
-    if (!currentUser) return;
-    if (!newName.trim() || oldName === newName) return;
-
-    try {
-      // 1. Atualiza na lista de categorias
-      const qCat = query(collection(db, "categories"), where("uid", "==", currentUser.id), where("name", "==", oldName));
-      const snapCat = await getDocs(qCat);
-      
-      if (snapCat.empty) {
-          // Se não achar (pode ser uma categoria nativa), a gente cria a nova
-          await addDoc(collection(db, "categories"), { name: newName, uid: currentUser.id });
-      } else {
-          const batch = writeBatch(db);
-          snapCat.docs.forEach(d => batch.update(d.ref, { name: newName }));
-          await batch.commit();
-      }
-
-      // 2. Atualiza os lançamentos antigos que usavam essa categoria!
-      const qTrans = query(collection(db, "transactions"), where("uid", "==", currentUser.id), where("category", "==", oldName));
-      const snapTrans = await getDocs(qTrans);
-      if (!snapTrans.empty) {
-          const batchTrans = writeBatch(db);
-          snapTrans.docs.forEach(d => batchTrans.update(d.ref, { category: newName }));
-          await batchTrans.commit();
-      }
-      
-      alert(`Categoria alterada para "${newName}" com sucesso! 🎉`);
-    } catch (err: any) {
-      console.error("Erro ao renomear:", err);
-      alert(`Erro ao renomear categoria: ${err.message}`);
-    }
-  };
-
-  const handleDeleteCategory = async (name: string) => {
-    if (!currentUser) return;
-    if (confirm(`Tem certeza que deseja excluir a categoria "${name}"?\n\n(Não se preocupe: os lançamentos antigos que usam essa categoria não serão apagados!)`)) {
-      try {
-        const q = query(collection(db, "categories"), where("uid", "==", currentUser.id), where("name", "==", name));
-        const snap = await getDocs(q);
-        
-        if (!snap.empty) {
-            const batch = writeBatch(db);
-            snap.docs.forEach(d => batch.delete(d.ref));
-            await batch.commit();
-        } else {
-            alert(`A categoria "${name}" é nativa do sistema e não pode ser apagada, mas você pode simplesmente não usá-la.`);
-        }
-      } catch (err: any) {
-        console.error("Erro ao excluir:", err);
-        alert(`Erro ao excluir: ${err.message}`);
-      }
-    }
-  };
-  // ----------------------------------------------------
-
+  // --- FUNÇÃO CORRIGIDA: Limpa os erros de 'undefined' antes de salvar ---
   const addTransaction = async (t: Omit<Transaction, 'id'>) => { 
     if (!currentUser) return; 
 
+    // Faxina para o banco de dados não travar
     const cleanObj = (obj: any) => {
       const newObj = { ...obj };
       Object.keys(newObj).forEach(key => {
@@ -248,6 +194,7 @@ const App: React.FC = () => {
                    futureInvoiceMonth = fInvoice.toISOString().slice(0, 7); 
                 }
                 
+                // Passando a faxina antes de salvar
                 const payload = cleanObj({ 
                     ...t, 
                     date: isoDate, 
@@ -261,9 +208,11 @@ const App: React.FC = () => {
             }
             alert("Lançamento parcelado criado para os próximos 12 meses! 🗓️✨");
         } else {
+            // Lançamento normal com a faxina
             const payload = cleanObj({ ...t, uid: currentUser.id });
             await addDoc(collection(db, "transactions"), payload);
         }
+        
         if (!categories.includes(t.category)) {
             await addDoc(collection(db, "categories"), { name: t.category, uid: currentUser.id });
         }
@@ -314,7 +263,7 @@ const App: React.FC = () => {
                 onUpdateTotalCreditLimit={(v) => updSet({ totalCreditLimit: v })}
                 onUpdateNextMonthInvoice={(v) => updSet({ nextMonthInvoice: v })}
                 closingDay={closingDay}
-                onAddCategory={handleQuickAddCategory} 
+                onAddCategory={handleQuickAddCategory} // <--- CONECTADO AQUI!
               />
             </div>
           )}
@@ -333,23 +282,14 @@ const App: React.FC = () => {
                 categories={categories}
                 onOpenCategoryManager={() => setIsCatManagerOpen(true)}
                 currentDate={currentDate} 
-                onAddCategory={handleQuickAddCategory}
+                onAddCategory={handleQuickAddCategory} // <--- CONECTADO AQUI TAMBÉM!
               />
             </div>
           )}
         </div>
       </div>
       
-      {/* CONECTEI AS FUNÇÕES AQUI 👇 */}
-      <CategoryManagerModal 
-        isOpen={isCatManagerOpen} 
-        onClose={() => setIsCatManagerOpen(false)} 
-        categories={categories} 
-        onRename={handleRenameCategory} 
-        onDelete={handleDeleteCategory} 
-      />
-      {/* --------------------------- */}
-
+      <CategoryManagerModal isOpen={isCatManagerOpen} onClose={() => setIsCatManagerOpen(false)} categories={categories} onRename={() => {}} onDelete={async (name) => { if (confirm(`Excluir categoria "${name}"?`)) { const q = query(collection(db, "categories"), where("uid", "==", currentUser.id), where("name", "==", name)); const snap = await getDocs(q); snap.docs.forEach(d => deleteDoc(d.ref)); }}} />
       {isSettingsOpen && <div className="fixed inset-0 bg-[#521256]/60 backdrop-blur-md z-[200] flex items-center justify-center p-4"><div className="bg-white p-8 rounded-xl"><button onClick={() => setIsSettingsOpen(false)}>Fechar</button></div></div>}
       {isResetConfirmOpen && <div className="fixed inset-0 bg-red-600/80 z-[250] flex items-center justify-center"><div className="bg-white p-8"><button onClick={() => setIsResetConfirmOpen(false)}>Cancelar</button></div></div>}
     </Layout>
