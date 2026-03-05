@@ -106,7 +106,16 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
     onClose();
   };
 
-  const handleAddCategory = () => { if (newCategory && onAddCategory) { onAddCategory(newCategory); setCategory(newCategory); setNewCategory(''); setIsAddingCategory(false); } };
+  // --- MUDANÇA PRINCIPAL AQUI ---
+  // Esta função agora aplica a categoria na hora e limpa o campinho
+  const handleAddCategory = () => { 
+    if (newCategory) { 
+        if (onAddCategory) onAddCategory(newCategory); 
+        setCategory(newCategory); // Seleciona a nova categoria automaticamente
+        setNewCategory('');       // Esvazia o input
+        setIsAddingCategory(false); // Fecha o input
+    } 
+  };
 
   if (!isOpen) return null;
 
@@ -191,6 +200,12 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
                 <select required value={category} onChange={(e) => setCategory(e.target.value)} className="w-full px-4 py-3 bg-[#efd2fe]/30 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#f170c3] text-[#521256] font-bold appearance-none">
                 <option value="">Selecione...</option>
                 {availableCategories.map(c => <option key={c} value={c}>{c}</option>)}
+                
+                {/* --- SEGUNDA MUDANÇA AQUI --- */}
+                {/* Se a categoria for nova (ainda não estiver na lista de disponíveis), ela aparece aqui imediatamente! */}
+                {category && !availableCategories.includes(category) && (
+                    <option value={category}>{category}</option>
+                )}
                 </select>
             )}
           </div>
