@@ -153,17 +153,23 @@ const App: React.FC = () => {
   const handleSaveProfile = async () => { /* Mantido */ };
   const handleLogout = async () => { await signOut(auth); setIsSettingsOpen(false); };
   
-  // --- AQUI ESTÁ A CORREÇÃO DO ERRO DO PRINT (LIMPANDO OS UNDEFINED) ---
+  // --- FUNÇÃO ADICIONADA: Salvar categoria nova ---
+  const handleQuickAddCategory = async (name: string) => {
+    if (!currentUser) return;
+    if (!categories.includes(name)) {
+        await addDoc(collection(db, "categories"), { name, uid: currentUser.id });
+    }
+  };
+
+  // --- FUNÇÃO CORRIGIDA: Limpa os erros de 'undefined' antes de salvar ---
   const addTransaction = async (t: Omit<Transaction, 'id'>) => { 
     if (!currentUser) return; 
 
-    // Função que varre os dados e apaga o que for "undefined"
+    // Faxina para o banco de dados não travar
     const cleanObj = (obj: any) => {
       const newObj = { ...obj };
       Object.keys(newObj).forEach(key => {
-        if (newObj[key] === undefined) {
-          delete newObj[key];
-        }
+        if (newObj[key] === undefined) delete newObj[key];
       });
       return newObj;
     };
@@ -188,7 +194,7 @@ const App: React.FC = () => {
                    futureInvoiceMonth = fInvoice.toISOString().slice(0, 7); 
                 }
                 
-                // Limpamos o objeto antes de salvar no banco
+                // Passando a faxina antes de salvar
                 const payload = cleanObj({ 
                     ...t, 
                     date: isoDate, 
@@ -202,10 +208,11 @@ const App: React.FC = () => {
             }
             alert("Lançamento parcelado criado para os próximos 12 meses! 🗓️✨");
         } else {
-            // Limpamos o objeto antes de salvar no banco
+            // Lançamento normal com a faxina
             const payload = cleanObj({ ...t, uid: currentUser.id });
             await addDoc(collection(db, "transactions"), payload);
         }
+        
         if (!categories.includes(t.category)) {
             await addDoc(collection(db, "categories"), { name: t.category, uid: currentUser.id });
         }
@@ -256,6 +263,7 @@ const App: React.FC = () => {
                 onUpdateTotalCreditLimit={(v) => updSet({ totalCreditLimit: v })}
                 onUpdateNextMonthInvoice={(v) => updSet({ nextMonthInvoice: v })}
                 closingDay={closingDay}
+                onAddCategory={handleQuickAddCategory} // <--- CONECTADO AQUI!
               />
             </div>
           )}
@@ -274,6 +282,7 @@ const App: React.FC = () => {
                 categories={categories}
                 onOpenCategoryManager={() => setIsCatManagerOpen(true)}
                 currentDate={currentDate} 
+                onAddCategory={handleQuickAddCategory} // <--- CONECTADO AQUI TAMBÉM!
               />
             </div>
           )}
