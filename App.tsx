@@ -264,6 +264,7 @@ const App: React.FC = () => {
                 onUpdateNextMonthInvoice={(v) => updSet({ nextMonthInvoice: v })}
                 closingDay={closingDay}
                 onAddCategory={handleQuickAddCategory} // <--- CONECTADO AQUI!
+                onDeleteTransaction={deleteTransaction}
               />
             </div>
           )}
