@@ -43,9 +43,17 @@ const App: React.FC = () => {
   }, [allTransactions, currentDate]);
 
   const [budgets, setBudgets] = useState<CategoryBudget[]>([]);
-  const [categories, setCategories] = useState<string[]>([]);
+  const [dbCategories, setDbCategories] = useState<string[]>([]);
+  const [hiddenCategories, setHiddenCategories] = useState<string[]>([]);
   const [investmentHistory, setInvestmentHistory] = useState<InvestmentTransaction[]>([]);
   const [marketItems, setMarketItems] = useState<MarketItem[]>([]); 
+
+  // Categorias visíveis = (fixas do código + criadas no banco) − escondidas pelo usuário
+  const categories = useMemo(() => {
+    return Array.from(new Set([...INITIAL_CATEGORIES, ...dbCategories]))
+      .filter(c => !hiddenCategories.includes(c))
+      .sort();
+  }, [dbCategories, hiddenCategories]);
 
   const [initialBalance, setInitialBalance] = useState<number>(0);
   const [initialNubankBill, setInitialNubankBill] = useState<number>(0); 
@@ -102,8 +110,8 @@ const App: React.FC = () => {
 
     const qCats = query(collection(db, "categories"), where("uid", "==", uid));
     const unsubCats = onSnapshot(qCats, (snapshot) => {
-      const dbCategories = snapshot.docs.map(doc => doc.data().name as string);
-      setCategories(Array.from(new Set([...INITIAL_CATEGORIES, ...dbCategories])).sort());
+      const dbCats = snapshot.docs.map(doc => doc.data().name as string);
+      setDbCategories(dbCats);
     });
 
     const qBudgets = query(collection(db, "budgets"), where("uid", "==", uid));
@@ -140,6 +148,7 @@ const App: React.FC = () => {
         setInitialPortoBill(data.initialPortoBill || 0);
         setTotalCreditLimit(data.totalCreditLimit || 5000);
         setNextMonthInvoice(data.nextMonthInvoice || 0);
+        setHiddenCategories(data.hiddenCategories || []);
         if (data.closingDay) setClosingDay(data.closingDay);
         if (data.dueDay) setDueDay(data.dueDay);
       }
@@ -153,12 +162,69 @@ const App: React.FC = () => {
   const handleSaveProfile = async () => { /* Mantido */ };
   const handleLogout = async () => { await signOut(auth); setIsSettingsOpen(false); };
   
-  // --- FUNÇÃO ADICIONADA: Salvar categoria nova ---
-  const handleQuickAddCategory = async (name: string) => {
-    if (!currentUser) return;
-    if (!categories.includes(name)) {
-        await addDoc(collection(db, "categories"), { name, uid: currentUser.id });
+  // --- CATEGORIAS: garantir que uma categoria apareça (cria no banco se preciso e tira das escondidas) ---
+  const ensureCategoryVisible = async (name: string) => {
+    if (!currentUser || !name) return;
+    const tasks: Promise<any>[] = [];
+    if (hiddenCategories.includes(name)) {
+      tasks.push(updSet({ hiddenCategories: hiddenCategories.filter(c => c !== name) }));
     }
+    const existsSomewhere = INITIAL_CATEGORIES.includes(name) || dbCategories.includes(name);
+    if (!existsSomewhere) {
+      tasks.push(addDoc(collection(db, "categories"), { name, uid: currentUser.id }));
+    }
+    await Promise.all(tasks);
+  };
+
+  const handleQuickAddCategory = async (name: string) => {
+    await ensureCategoryVisible(name);
+  };
+
+  // --- CATEGORIAS: excluir (some da lista pra sempre, mesmo sendo uma das fixas) ---
+  const handleDeleteCategory = async (name: string) => {
+    if (!currentUser) return;
+    if (!confirm(`Excluir a categoria "${name}"?\n\nEla some da lista de opções. Seus lançamentos antigos não mudam.`)) return;
+    // Apaga os documentos dessa categoria no banco (se existirem)
+    const q = query(collection(db, "categories"), where("uid", "==", currentUser.id), where("name", "==", name));
+    const snap = await getDocs(q);
+    const batch = writeBatch(db);
+    snap.docs.forEach(d => batch.delete(d.ref));
+    await batch.commit();
+    // Esconde o nome, pra fixas do código também sumirem de vez
+    if (!hiddenCategories.includes(name)) {
+      await updSet({ hiddenCategories: [...hiddenCategories, name] });
+    }
+  };
+
+  // --- CATEGORIAS: renomear (de verdade — e atualiza os lançamentos que usavam o nome antigo) ---
+  const handleRenameCategory = async (oldName: string, newName: string) => {
+    if (!currentUser) return;
+    const clean = (newName || '').trim();
+    if (!clean || clean === oldName) return;
+
+    const batch = writeBatch(db);
+
+    // Cria o nome novo no banco (se ainda não existir em lugar nenhum)
+    if (!INITIAL_CATEGORIES.includes(clean) && !dbCategories.includes(clean)) {
+      await addDoc(collection(db, "categories"), { name: clean, uid: currentUser.id });
+    }
+
+    // Remove os documentos do nome antigo
+    const qOld = query(collection(db, "categories"), where("uid", "==", currentUser.id), where("name", "==", oldName));
+    const snapOld = await getDocs(qOld);
+    snapOld.docs.forEach(d => batch.delete(d.ref));
+
+    // Atualiza os lançamentos que usavam o nome antigo → nome novo
+    const qTrans = query(collection(db, "transactions"), where("uid", "==", currentUser.id), where("category", "==", oldName));
+    const snapTrans = await getDocs(qTrans);
+    snapTrans.docs.forEach(d => batch.update(d.ref, { category: clean }));
+
+    await batch.commit();
+
+    // Esconde o antigo (caso seja uma das fixas) e garante o novo visível
+    const nextHidden = hiddenCategories.filter(c => c !== clean);
+    if (!nextHidden.includes(oldName)) nextHidden.push(oldName);
+    await updSet({ hiddenCategories: nextHidden });
   };
 
   // --- FUNÇÃO CORRIGIDA: Limpa os erros de 'undefined' antes de salvar ---
@@ -214,7 +280,7 @@ const App: React.FC = () => {
         }
         
         if (!categories.includes(t.category)) {
-            await addDoc(collection(db, "categories"), { name: t.category, uid: currentUser.id });
+            await ensureCategoryVisible(t.category);
         }
     } catch (error: any) {
         console.error("Erro ao salvar:", error);
@@ -290,7 +356,7 @@ const App: React.FC = () => {
         </div>
       </div>
       
-      <CategoryManagerModal isOpen={isCatManagerOpen} onClose={() => setIsCatManagerOpen(false)} categories={categories} onRename={() => {}} onDelete={async (name) => { if (confirm(`Excluir categoria "${name}"?`)) { const q = query(collection(db, "categories"), where("uid", "==", currentUser.id), where("name", "==", name)); const snap = await getDocs(q); snap.docs.forEach(d => deleteDoc(d.ref)); }}} />
+      <CategoryManagerModal isOpen={isCatManagerOpen} onClose={() => setIsCatManagerOpen(false)} categories={categories} onRename={handleRenameCategory} onDelete={handleDeleteCategory} />
       {isSettingsOpen && <div className="fixed inset-0 bg-[#521256]/60 backdrop-blur-md z-[200] flex items-center justify-center p-4"><div className="bg-white p-8 rounded-xl"><button onClick={() => setIsSettingsOpen(false)}>Fechar</button></div></div>}
       {isResetConfirmOpen && <div className="fixed inset-0 bg-red-600/80 z-[250] flex items-center justify-center"><div className="bg-white p-8"><button onClick={() => setIsResetConfirmOpen(false)}>Cancelar</button></div></div>}
     </Layout>
