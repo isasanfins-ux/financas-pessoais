@@ -3,6 +3,7 @@ import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { Transaction, TransactionType, PaymentMethod } from '../types';
 import { CHART_COLORS, COLORS } from '../constants';
 import TransactionModal from './TransactionModal';
+import Planning from './Planning';
 
 interface DashboardProps {
   transactions: Transaction[]; 
@@ -29,6 +30,9 @@ interface DashboardProps {
   onUpdateTotalCreditLimit: (val: number) => void;
   onUpdateNextMonthInvoice: (val: number) => void;
   closingDay?: number; 
+  budgets?: import('../types').CategoryBudget[];
+  onUpdateBudget?: (category: string, limit: number) => void;
+  onDeleteBudget?: (category: string) => void;
 }
 
 const Dashboard: React.FC<DashboardProps> = ({ 
@@ -49,7 +53,10 @@ const Dashboard: React.FC<DashboardProps> = ({
   onUpdateNubankBill,
   onUpdatePortoBill,
   onUpdateTotalCreditLimit,
-  closingDay = 6 
+  closingDay = 6,
+  budgets = [],
+  onUpdateBudget = () => {},
+  onDeleteBudget = () => {}
 }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalType, setModalType] = useState<TransactionType>(TransactionType.EXPENSE);
@@ -397,6 +404,18 @@ const Dashboard: React.FC<DashboardProps> = ({
           </div>
         </div>
       </div>
+
+      {/* ====================================================== */}
+      {/* DOBRA 4 — TETOS DE GASTOS (Planejamento na home) */}
+      {/* ====================================================== */}
+      <Planning
+        embedded
+        transactions={transactions}
+        budgets={budgets}
+        categories={categories}
+        onUpdateBudget={onUpdateBudget}
+        onDeleteBudget={onDeleteBudget}
+      />
 
       <TransactionModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onSave={handleSave} type={modalType} availableCategories={categories} onAddCategory={onAddCategory} onOpenCategoryManager={onOpenCategoryManager} closingDay={closingDay} />
       {selectedCategory && ( <div className="fixed inset-0 bg-[#521256]/60 backdrop-blur-md z-[150] flex items-center justify-center p-4"><div className="bg-white p-8 rounded-2xl w-full max-w-md"><div className="flex justify-between mb-4"><h3 className="font-bold text-[#521256]">{selectedCategory}</h3><button onClick={() => setSelectedCategory(null)}>Fechar</button></div><div className="max-h-[60vh] overflow-y-auto">{categoryTransactions.map(t => (<div key={t.id} className="flex justify-between items-center py-2 border-b border-gray-100 gap-2"><span className="text-sm flex-1 truncate">{t.description}</span><span className="font-bold text-red-500 whitespace-nowrap">- R$ {t.amount.toLocaleString('pt-BR')}</span>{onDeleteTransaction && (<button onClick={() => handleDelete(t.id)} className="p-1.5 rounded-full text-[#521256]/30 hover:text-red-500 hover:bg-red-50 transition-colors flex-shrink-0" title="Excluir lançamento"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>)}</div>))}</div></div></div> )}
