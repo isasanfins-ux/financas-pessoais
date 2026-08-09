@@ -331,13 +331,15 @@ const App: React.FC = () => {
                 closingDay={closingDay}
                 onAddCategory={handleQuickAddCategory} // <--- CONECTADO AQUI!
                 onDeleteTransaction={deleteTransaction}
+                budgets={budgets}
+                onUpdateBudget={updBudg}
+                onDeleteBudget={delBudg}
               />
             </div>
           )}
           {activeTab === 'market' && ( <div className="w-full pb-24 lg:pb-0"> {monthSelector} <Market items={marketItems} onAddItem={addMarketItem} onDeleteItem={deleteMarketItem} /> </div> )}
           {activeTab === 'reports' && ( <div className="w-full pb-24 lg:pb-0"> <Reports transactions={allTransactions} /> </div> )}
           {activeTab === 'investments' && ( <div className="w-full pb-24 lg:pb-0"> <Investments history={investmentHistory} onAddTransaction={addInv} onUpdateTransaction={updInv} onDeleteTransaction={delInv} /> </div> )}
-          {activeTab === 'planning' && ( <div className="w-full pb-24 lg:pb-0"> {monthSelector} <Planning transactions={monthlyTransactions} budgets={budgets} categories={categories} onUpdateBudget={updBudg} onDeleteBudget={delBudg} /> </div> )}
           {activeTab === 'history' && (
             <div className="w-full max-w-5xl mx-auto pb-24 lg:pb-0">
               {monthSelector}
