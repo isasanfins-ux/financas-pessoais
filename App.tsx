@@ -6,10 +6,9 @@ import History from './components/History';
 import Planning from './components/Planning';
 import Investments from './components/Investments';
 import Reports from './components/Reports';
-import Market from './components/Market'; 
 import CategoryManagerModal from './components/CategoryManagerModal';
 import MonthSelector from './components/MonthSelector';
-import { Transaction, CategoryBudget, InvestmentTransaction, User, MarketItem } from './types';
+import { Transaction, CategoryBudget, InvestmentTransaction, User } from './types';
 import { INITIAL_CATEGORIES } from './constants';
 import { auth, db } from './lib/firebase';
 import { onAuthStateChanged, signOut, updateProfile, updatePassword } from 'firebase/auth';
@@ -46,7 +45,6 @@ const App: React.FC = () => {
   const [dbCategories, setDbCategories] = useState<string[]>([]);
   const [hiddenCategories, setHiddenCategories] = useState<string[]>([]);
   const [investmentHistory, setInvestmentHistory] = useState<InvestmentTransaction[]>([]);
-  const [marketItems, setMarketItems] = useState<MarketItem[]>([]); 
 
   // Categorias visíveis = (fixas do código + criadas no banco) − escondidas pelo usuário
   const categories = useMemo(() => {
@@ -129,17 +127,6 @@ const App: React.FC = () => {
       setInvestmentHistory(snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as InvestmentTransaction)));
     });
 
-    const qMarket = query(collection(db, "market_items"), where("uid", "==", uid));
-    const unsubMarket = onSnapshot(qMarket, (snapshot) => {
-      const allMarketItems = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as MarketItem));
-      const currentMonthMarketItems = allMarketItems.filter(item => {
-        const itemDate = new Date(item.date + 'T12:00:00');
-        return itemDate.getMonth() === currentDate.getMonth() &&
-               itemDate.getFullYear() === currentDate.getFullYear();
-      });
-      setMarketItems(currentMonthMarketItems);
-    });
-
     const unsubSettings = onSnapshot(doc(db, "settings", uid), (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
@@ -154,7 +141,7 @@ const App: React.FC = () => {
       }
     });
 
-    return () => { unsubTrans(); unsubCats(); unsubBudgets(); unsubInv(); unsubMarket(); unsubSettings(); };
+    return () => { unsubTrans(); unsubCats(); unsubBudgets(); unsubInv(); unsubSettings(); };
   }, [currentUser, currentDate]);
 
   const updSet = async (u: any) => currentUser && setDoc(doc(db, "settings", currentUser.id), { ...u, uid: currentUser.id }, { merge: true });
@@ -293,8 +280,6 @@ const App: React.FC = () => {
   const addInv = async (t: any) => currentUser && addDoc(collection(db, "investment_transactions"), { ...t, uid: currentUser.id });
   const updInv = async (u: any) => currentUser && updateDoc(doc(db, "investment_transactions", u.id), { ...u, uid: currentUser.id });
   const delInv = async (id: string) => deleteDoc(doc(db, "investment_transactions", id));
-  const addMarketItem = async (t: any) => currentUser && addDoc(collection(db, "market_items"), { ...t, uid: currentUser.id });
-  const deleteMarketItem = async (id: string) => deleteDoc(doc(db, "market_items", id));
   const updBudg = async (c: string, l: number) => { if(!currentUser) return; const ex = budgets.find(b => b.category === c); if(ex?.id) { await updateDoc(doc(db, "budgets", ex.id), { limit: l }); } else { await addDoc(collection(db, "budgets"), { category: c, limit: l, uid: currentUser.id, month: currentDate.getMonth(), year: currentDate.getFullYear() }); }};
   const delBudg = async (category: string) => { if(!currentUser) return; const ex = budgets.find(b => b.category === category); if(ex?.id) await deleteDoc(doc(db, "budgets", ex.id)); };
   const resetAllData = async () => { /* Mantido */ };
@@ -337,7 +322,6 @@ const App: React.FC = () => {
               />
             </div>
           )}
-          {activeTab === 'market' && ( <div className="w-full pb-24 lg:pb-0"> {monthSelector} <Market items={marketItems} onAddItem={addMarketItem} onDeleteItem={deleteMarketItem} /> </div> )}
           {activeTab === 'reports' && ( <div className="w-full pb-24 lg:pb-0"> <Reports transactions={allTransactions} /> </div> )}
           {activeTab === 'investments' && ( <div className="w-full pb-24 lg:pb-0"> <Investments history={investmentHistory} onAddTransaction={addInv} onUpdateTransaction={updInv} onDeleteTransaction={delInv} /> </div> )}
           {activeTab === 'history' && (
