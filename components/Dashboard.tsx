@@ -62,7 +62,6 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [nubankView, setNubankView] = useState<'CURRENT' | 'NEXT'>('CURRENT');
   const [portoView, setPortoView] = useState<'CURRENT' | 'NEXT'>('CURRENT');
 
-  // Adicionei CREDIT_NUBANK e CREDIT_PORTO nos tipos de detalhe
   const [activeDetailType, setActiveDetailType] = useState<'INCOME' | 'DEBIT' | 'CREDIT' | 'CREDIT_NUBANK' | 'CREDIT_PORTO' | null>(null);
   
   const [isReady, setIsReady] = useState(false);
@@ -85,7 +84,6 @@ const Dashboard: React.FC<DashboardProps> = ({
     return Object.entries(summary).map(([name, value]) => ({ name, value, percent: total > 0 ? (value / total) * 100 : 0 })).sort((a, b) => b.value - a.value);
   }, [transactions]);
 
-  // --- ESTATÍSTICAS ---
   const stats = useMemo(() => {
     const safeAll = allTransactions || [];
     const safeMonthly = transactions || [];
@@ -122,8 +120,17 @@ const Dashboard: React.FC<DashboardProps> = ({
     const totalFaturaPortoProxima = gastosPortoProximo;
 
     const receitas = safeMonthly.filter(t => t.type === TransactionType.INCOME).reduce((acc, curr) => acc + curr.amount, 0);
+
+    const saidas = safeMonthly
+      .filter(t => t.type === TransactionType.EXPENSE && t.paymentMethod !== PaymentMethod.CREDIT_CARD && t.category !== PAYMENT_CATEGORY)
+      .reduce((acc, curr) => acc + curr.amount, 0);
+
     const immediateExpenses = safeMonthly.filter(t => t.type === TransactionType.EXPENSE && t.paymentMethod !== PaymentMethod.CREDIT_CARD).reduce((acc, curr) => acc + curr.amount, 0);
     const pagamentosFatura = safeMonthly.filter(t => t.category === PAYMENT_CATEGORY).reduce((acc, curr) => acc + curr.amount, 0);
+
+    const cartoesFaturaAtual = totalFaturaNubankAtual + totalFaturaPortoAtual;
+
+    const sobra = receitas - saidas - cartoesFaturaAtual;
 
     const valorExibidoNubank = nubankView === 'CURRENT' ? totalFaturaNubankAtual : totalFaturaNubankProxima;
     const valorExibidoPorto = portoView === 'CURRENT' ? totalFaturaPortoAtual : totalFaturaPortoProxima;
@@ -137,6 +144,9 @@ const Dashboard: React.FC<DashboardProps> = ({
     return {
       saldo: initialBalance + receitas - immediateExpenses - pagamentosFatura,
       receitas,
+      saidas,
+      cartoesFaturaAtual,
+      sobra,
       despesasConta: immediateExpenses,
       nubank: { atual: totalFaturaNubankAtual, proxima: totalFaturaNubankProxima, gastosMes: gastosNubankAtual },
       porto: { atual: totalFaturaPortoAtual, proxima: totalFaturaPortoProxima, gastosMes: gastosPortoAtual },
@@ -151,7 +161,6 @@ const Dashboard: React.FC<DashboardProps> = ({
     return transactions.filter(t => t.category === selectedCategory && t.type === TransactionType.EXPENSE).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [selectedCategory, transactions]);
 
-  // --- LÓGICA DE FILTRO DA POP-UP DE DETALHES ---
   const detailTransactions = useMemo(() => {
     if (!activeDetailType) return [];
 
@@ -165,20 +174,17 @@ const Dashboard: React.FC<DashboardProps> = ({
     };
 
     if (activeDetailType === 'INCOME') return transactions.filter(t => t.type === TransactionType.INCOME).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-    if (activeDetailType === 'DEBIT') return transactions.filter(t => t.type === TransactionType.EXPENSE && t.paymentMethod !== PaymentMethod.CREDIT_CARD).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    if (activeDetailType === 'DEBIT') return transactions.filter(t => t.type === TransactionType.EXPENSE && t.paymentMethod !== PaymentMethod.CREDIT_CARD && t.category !== PAYMENT_CATEGORY).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     
-    // Lista TODOS os cartões (Mês Atual)
     if (activeDetailType === 'CREDIT') {
       return allTransactions.filter(t => t.type === TransactionType.EXPENSE && t.paymentMethod === PaymentMethod.CREDIT_CARD && filterByMonthHelper(t, currentInvoiceMonth)).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     }
 
-    // Lista SÓ NUBANK (Respeita a chavinha Atual/Próxima!)
     if (activeDetailType === 'CREDIT_NUBANK') {
       const targetMonth = nubankView === 'CURRENT' ? currentInvoiceMonth : nextInvoiceMonth;
       return allTransactions.filter(t => t.type === TransactionType.EXPENSE && t.paymentMethod === PaymentMethod.CREDIT_CARD && (t.cardType === 'Nubank' || !t.cardType) && filterByMonthHelper(t, targetMonth)).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     }
 
-    // Lista SÓ PORTO (Respeita a chavinha Atual/Próxima!)
     if (activeDetailType === 'CREDIT_PORTO') {
       const targetMonth = portoView === 'CURRENT' ? currentInvoiceMonth : nextInvoiceMonth;
       return allTransactions.filter(t => t.type === TransactionType.EXPENSE && t.paymentMethod === PaymentMethod.CREDIT_CARD && t.cardType === 'Porto' && filterByMonthHelper(t, targetMonth)).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
@@ -206,18 +212,34 @@ const Dashboard: React.FC<DashboardProps> = ({
     setIsBalanceCalibrating(false); setIsNubankCalibrating(false); setIsPortoCalibrating(false); setIsLimitCalibrating(false);
   };
 
-  const StatCard = ({ title, value, color, bgColor = 'white', textColor = '#521256', onClick }: any) => (
-    <div onClick={onClick} className={`p-6 rounded-[2rem] shadow-xl shadow-[#521256]/5 border border-white/40 flex flex-col justify-between transition-all group ${onClick ? 'cursor-pointer hover:scale-[1.02] active:scale-95' : ''}`} style={{ backgroundColor: bgColor }}>
-      <div className="flex justify-between items-start"><span className="text-[10px] uppercase tracking-widest font-black opacity-50" style={{ color: textColor }}>{title}</span>{onClick && <span className="opacity-0 group-hover:opacity-40 transition-opacity"><svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" /></svg></span>}</div>
-      <h3 className="text-2xl font-black mt-2 tracking-tight" style={{ color: color || textColor }}>R$ {value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</h3>
+  const fmt = (v: number) => v.toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+
+  const FlowItem = ({ label, value, valueColor = '#521256', onClick }: any) => (
+    <div
+      onClick={onClick}
+      className={`flex-1 min-w-[130px] bg-white rounded-[1.5rem] px-5 py-4 shadow-lg shadow-[#521256]/5 border border-white/40 flex flex-col justify-center transition-all group ${onClick ? 'cursor-pointer hover:scale-[1.03] active:scale-95 hover:border-[#f170c3]/30' : ''}`}
+    >
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] uppercase tracking-widest font-black opacity-50 text-[#521256]">{label}</span>
+        {onClick && (
+          <span className="opacity-0 group-hover:opacity-40 transition-opacity text-[#521256]">
+            <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" /></svg>
+          </span>
+        )}
+      </div>
+      <h3 className="text-xl lg:text-2xl font-black mt-1 tracking-tight" style={{ color: valueColor }}>R$ {fmt(value)}</h3>
     </div>
+  );
+
+  const Operator = ({ symbol }: { symbol: string }) => (
+    <span className="text-2xl font-black text-[#521256]/30 px-1 select-none hidden sm:block">{symbol}</span>
   );
 
   const getDetailTitle = () => {
     switch(activeDetailType) {
-        case 'INCOME': return 'Receitas 🤑';
-        case 'DEBIT': return 'Saídas (Débito) 🔻';
-        case 'CREDIT': return 'Total em Cartões 💳';
+        case 'INCOME': return 'Entradas 🤑';
+        case 'DEBIT': return 'Saídas (Débito/Pix) 🔻';
+        case 'CREDIT': return 'Cartões — Fatura Atual 💳';
         case 'CREDIT_NUBANK': return `Fatura Nubank (${nubankView === 'CURRENT' ? 'Atual' : 'Próxima'}) 🟣`;
         case 'CREDIT_PORTO': return `Fatura Porto (${portoView === 'CURRENT' ? 'Atual' : 'Próxima'}) 🔵`;
         default: return 'Detalhes';
@@ -228,11 +250,26 @@ const Dashboard: React.FC<DashboardProps> = ({
 
   return (
     <div className="space-y-8 animate-in fade-in duration-700 pb-10">
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-        <StatCard title="Saldo Disponível" value={stats.saldo} bgColor={COLORS.BASE} onClick={openBalanceCalibration} />
-        <StatCard title="Receitas do Mês 🤩" value={stats.receitas} bgColor="#e2e585" textColor="#521256" onClick={() => setActiveDetailType('INCOME')} />
-        <StatCard title="Saídas (Débito) 🔻" value={stats.despesasConta} color="#ef4444" onClick={() => setActiveDetailType('DEBIT')} />
-        <StatCard title="Total em Cartões 💳" value={stats.totalCreditUsed} onClick={() => setActiveDetailType('CREDIT')} />
+
+      <div>
+        <div className="flex flex-wrap items-stretch gap-3 lg:gap-2">
+          <FlowItem label="Entradas 🤩" value={stats.receitas} valueColor="#1f9c5b" onClick={() => setActiveDetailType('INCOME')} />
+          <Operator symbol="−" />
+          <FlowItem label="Saídas 🔻" value={stats.saidas} valueColor="#ef4444" onClick={() => setActiveDetailType('DEBIT')} />
+          <Operator symbol="−" />
+          <FlowItem label="Cartões 💳" value={stats.cartoesFaturaAtual} valueColor="#521256" onClick={() => setActiveDetailType('CREDIT')} />
+          <Operator symbol="=" />
+
+          <div className="flex-[1.4] min-w-[180px] rounded-[1.5rem] px-6 py-4 shadow-xl shadow-[#f170c3]/30 flex flex-col justify-center relative overflow-hidden" style={{ backgroundColor: stats.sobra >= 0 ? '#f170c3' : '#521256' }}>
+            <span className="text-[10px] uppercase tracking-widest font-black text-white/70">
+              {stats.sobra >= 0 ? '✨ Sobra pra investir ou aproveitar' : '⚠️ Você passou do orçamento'}
+            </span>
+            <h3 className="text-2xl lg:text-3xl font-black mt-1 tracking-tight text-white">R$ {fmt(stats.sobra)}</h3>
+          </div>
+        </div>
+        <p className="text-[10px] font-bold text-[#521256]/40 mt-3 ml-2 uppercase tracking-widest">
+          Clique em qualquer valor pra ver os detalhes 👆
+        </p>
       </div>
 
       <div className="flex flex-wrap gap-4 items-center">
@@ -240,17 +277,53 @@ const Dashboard: React.FC<DashboardProps> = ({
         <button onClick={() => handleOpenModal(TransactionType.EXPENSE)} className="flex items-center gap-3 px-8 py-4 bg-[#f170c3] text-white rounded-full font-black text-sm shadow-lg shadow-[#f170c3]/20 hover:scale-105 active:scale-95 transition-all"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" /></svg> Nova Despesa</button>
       </div>
 
+      <div className="bg-white/70 rounded-[2.5rem] p-8 lg:p-10 shadow-xl shadow-[#521256]/5 border border-white/40">
+        <h3 className="text-xl font-black text-[#521256] mb-8 flex items-center justify-between">Pra onde foi? — Análise por Categoria <span>🔎</span></h3>
+        {categoryData.length === 0 ? (
+          <p className="text-center py-10 text-sm font-bold opacity-30 italic">Nenhum gasto lançado neste mês ainda. 🌱</p>
+        ) : (
+          <div className="flex flex-col lg:flex-row items-center gap-8 lg:gap-12">
+            <div className="h-[300px] w-full lg:w-1/2">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie data={categoryData} cx="50%" cy="50%" innerRadius={70} outerRadius={110} paddingAngle={5} dataKey="value" stroke="none">
+                    {categoryData.map((entry, index) => (<Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />))}
+                  </Pie>
+                  <Tooltip contentStyle={{ borderRadius: '1.2rem', border: 'none', boxShadow: '0 10px 25px rgba(0,0,0,0.05)', padding: '0.8rem' }} formatter={(value: number, name: string) => [`R$ ${fmt(value)}`, name]} />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="w-full lg:w-1/2 space-y-3 lg:max-h-[300px] lg:overflow-y-auto pr-2 custom-scrollbar">
+              {categoryData.map((entry, index) => (
+                <div key={index} onClick={() => setSelectedCategory(entry.name)} className="flex items-center justify-between p-3 rounded-2xl hover:bg-white transition-colors cursor-pointer group border border-transparent hover:border-[#f170c3]/20 hover:shadow-md">
+                  <div className="flex items-center gap-3">
+                    <div className="w-4 h-4 rounded-full shadow-sm" style={{ backgroundColor: CHART_COLORS[index % CHART_COLORS.length] }}></div>
+                    <div><p className="text-xs font-black text-[#521256] group-hover:text-[#f170c3] transition-colors">{entry.name}</p><p className="text-[10px] font-bold opacity-40">{entry.percent.toFixed(1)}%</p></div>
+                  </div>
+                  <div className="text-right"><span className="text-sm font-black text-[#521256]">R$ {fmt(entry.value)}</span></div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
       <div className="bg-white rounded-[2.5rem] p-8 lg:p-10 shadow-2xl shadow-[#521256]/10 border border-white/20">
-        <div className="flex justify-between items-center mb-6">
+        <div className="flex justify-between items-center mb-6 flex-wrap gap-3">
            <h3 className="text-2xl font-black text-[#521256]">Meus Cartões 💳</h3>
-           <div className="text-right">
-             <span className="text-[10px] font-black opacity-40 uppercase tracking-widest block">Limite Global</span>
-             <button onClick={openLimitCalibration} className="text-xl font-black text-[#521256] hover:text-[#f170c3] transition-colors">R$ {(stats.limiteTotal - stats.totalCreditUsed).toLocaleString('pt-BR')}</button>
+           <div className="flex items-center gap-5">
+             <div className="text-right">
+               <span className="text-[10px] font-black opacity-40 uppercase tracking-widest block">Saldo em Conta</span>
+               <button onClick={openBalanceCalibration} className="text-sm font-black text-[#521256]/70 hover:text-[#f170c3] transition-colors" title="Ajustar saldo real da conta">R$ {fmt(stats.saldo)} ⚙️</button>
+             </div>
+             <div className="text-right">
+               <span className="text-[10px] font-black opacity-40 uppercase tracking-widest block">Limite Global</span>
+               <button onClick={openLimitCalibration} className="text-xl font-black text-[#521256] hover:text-[#f170c3] transition-colors">R$ {(stats.limiteTotal - stats.totalCreditUsed).toLocaleString('pt-BR')}</button>
+             </div>
            </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-            {/* --- CARD NUBANK (Clicável) --- */}
             <div 
                 onClick={() => setActiveDetailType('CREDIT_NUBANK')} 
                 className={`p-6 rounded-[2rem] relative overflow-hidden shadow-lg transition-all cursor-pointer ${nubankView === 'CURRENT' ? 'bg-[#820ad1] text-white group hover:scale-[1.01]' : 'bg-white border-2 border-[#820ad1] text-[#820ad1]'}`}
@@ -275,7 +348,6 @@ const Dashboard: React.FC<DashboardProps> = ({
                 <p className="text-[10px] opacity-50">Vencimento dia 13</p>
             </div>
 
-            {/* --- CARD PORTO SEGURO (Clicável) --- */}
             <div 
                 onClick={() => setActiveDetailType('CREDIT_PORTO')}
                 className={`p-6 rounded-[2rem] relative overflow-hidden shadow-lg transition-all cursor-pointer ${portoView === 'CURRENT' ? 'bg-[#00a1fc] text-white group hover:scale-[1.01]' : 'bg-white border-2 border-[#00a1fc] text-[#00a1fc]'}`}
@@ -318,35 +390,6 @@ const Dashboard: React.FC<DashboardProps> = ({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-8">
-        <div className="bg-white/70 rounded-[2.5rem] p-10 shadow-xl shadow-[#521256]/5 border border-white/40">
-          <h3 className="text-xl font-black text-[#521256] mb-8 flex items-center justify-between">Análise por Categoria <span>🔎</span></h3>
-          <div className="flex flex-col lg:flex-row items-center gap-8 lg:gap-12">
-            <div className="h-[300px] w-full lg:w-1/2">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie data={categoryData} cx="50%" cy="50%" innerRadius={70} outerRadius={110} paddingAngle={5} dataKey="value" stroke="none">
-                    {categoryData.map((entry, index) => (<Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />))}
-                  </Pie>
-                  <Tooltip contentStyle={{ borderRadius: '1.2rem', border: 'none', boxShadow: '0 10px 25px rgba(0,0,0,0.05)', padding: '0.8rem' }} formatter={(value: number, name: string) => [`R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`, name]} />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-            <div className="w-full lg:w-1/2 space-y-3 lg:max-h-[300px] lg:overflow-y-auto pr-2 custom-scrollbar">
-              {categoryData.map((entry, index) => (
-                <div key={index} onClick={() => setSelectedCategory(entry.name)} className="flex items-center justify-between p-3 rounded-2xl hover:bg-white transition-colors cursor-pointer group border border-transparent hover:border-[#f170c3]/20 hover:shadow-md">
-                  <div className="flex items-center gap-3">
-                    <div className="w-4 h-4 rounded-full shadow-sm" style={{ backgroundColor: CHART_COLORS[index % CHART_COLORS.length] }}></div>
-                    <div><p className="text-xs font-black text-[#521256] group-hover:text-[#f170c3] transition-colors">{entry.name}</p><p className="text-[10px] font-bold opacity-40">{entry.percent.toFixed(1)}%</p></div>
-                  </div>
-                  <div className="text-right"><span className="text-sm font-black text-[#521256]">R$ {entry.value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span></div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-
       <TransactionModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onSave={handleSave} type={modalType} availableCategories={categories} onAddCategory={onAddCategory} onOpenCategoryManager={onOpenCategoryManager} closingDay={closingDay} />
       {selectedCategory && ( <div className="fixed inset-0 bg-[#521256]/60 backdrop-blur-md z-[150] flex items-center justify-center p-4"><div className="bg-white p-8 rounded-2xl w-full max-w-md"><div className="flex justify-between mb-4"><h3 className="font-bold text-[#521256]">{selectedCategory}</h3><button onClick={() => setSelectedCategory(null)}>Fechar</button></div><div className="max-h-[60vh] overflow-y-auto">{categoryTransactions.map(t => (<div key={t.id} className="flex justify-between py-2 border-b border-gray-100"><span className="text-sm">{t.description}</span><span className="font-bold text-red-500">- R$ {t.amount.toLocaleString('pt-BR')}</span></div>))}</div></div></div> )}
 
@@ -379,10 +422,10 @@ const Dashboard: React.FC<DashboardProps> = ({
                                     </div>
                                 </div>
                             </div>
-                            <span className={`font-black text-sm ${t.type === TransactionType.INCOME ? 'text-green-600' : 'text-red-500'}`}>{t.type === TransactionType.INCOME ? '+ ' : '- '} R$ {t.amount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                            <span className={`font-black text-sm ${t.type === TransactionType.INCOME ? 'text-green-600' : 'text-red-500'}`}>{t.type === TransactionType.INCOME ? '+ ' : '- '} R$ {fmt(t.amount)}</span>
                         </div>
                     ))}
-                    {detailTransactions.length === 0 && (<p className="text-center text-gray-400 font-bold text-xs py-8">Nenhum lançamento encontrado nesta fatura.</p>)}
+                    {detailTransactions.length === 0 && (<p className="text-center text-gray-400 font-bold text-xs py-8">Nenhum lançamento encontrado.</p>)}
                 </div>
             </div>
         </div>
