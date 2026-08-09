@@ -48,7 +48,6 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange, onPro
           <NavItem id="dashboard" label="Dashboard" icon={icons.dashboard} />
           <NavItem id="market" label="Mercado & Consumo" icon={icons.market} /> {/* <--- AQUI */}
           <NavItem id="investments" label="Investimentos" icon={icons.investments} />
-          <NavItem id="planning" label="Planejamento" icon={icons.planning} />
           <NavItem id="reports" label="Relatórios" icon={icons.reports} />
           <NavItem id="history" label="Extrato" icon={icons.history} />
         </nav>
@@ -98,10 +97,6 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange, onPro
         <button onClick={() => onTabChange('market')} className={`flex flex-col items-center ${activeTab === 'market' ? 'text-[#f170c3]' : 'text-[#521256] opacity-60'}`}>
           {icons.market}
           <span className="text-[10px] mt-1 font-semibold">Mercado</span>
-        </button>
-        <button onClick={() => onTabChange('planning')} className={`flex flex-col items-center ${activeTab === 'planning' ? 'text-[#f170c3]' : 'text-[#521256] opacity-60'}`}>
-          {icons.planning}
-          <span className="text-[10px] mt-1 font-semibold">Plano</span>
         </button>
         <button onClick={() => onTabChange('history')} className={`flex flex-col items-center ${activeTab === 'history' ? 'text-[#f170c3]' : 'text-[#521256] opacity-60'}`}>
           {icons.history}
