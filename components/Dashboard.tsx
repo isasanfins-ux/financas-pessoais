@@ -9,6 +9,7 @@ interface DashboardProps {
   allTransactions: Transaction[]; 
   currentDate: Date; 
   onAddTransaction: (t: Transaction) => void;
+  onDeleteTransaction?: (id: string) => void;
   categories?: string[];
   onAddCategory?: (name: string) => void;
   onOpenCategoryManager?: () => void;
@@ -35,6 +36,7 @@ const Dashboard: React.FC<DashboardProps> = ({
   allTransactions = [], 
   currentDate,
   onAddTransaction, 
+  onDeleteTransaction,
   categories = [],
   onAddCategory,
   onOpenCategoryManager,
@@ -195,6 +197,12 @@ const Dashboard: React.FC<DashboardProps> = ({
 
   const handleOpenModal = (type: TransactionType) => { setModalType(type); setIsModalOpen(true); };
   const handleSave = (t: Partial<Transaction>) => { onAddTransaction({ ...t, id: Math.random().toString(), createdAt: Date.now() } as any); };
+  const handleDelete = (id: string) => {
+    if (!onDeleteTransaction) return;
+    if (confirm('Excluir este lançamento? Essa ação não pode ser desfeita. 🗑️')) {
+      onDeleteTransaction(id);
+    }
+  };
   
   const openBalanceCalibration = () => { setCalibrationValue(stats.saldo.toFixed(2)); setIsBalanceCalibrating(true); };
   const openNubankCalibration = () => { setCalibrationValue(stats.nubank.atual.toFixed(2)); setIsNubankCalibrating(true); };
@@ -391,7 +399,7 @@ const Dashboard: React.FC<DashboardProps> = ({
       </div>
 
       <TransactionModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onSave={handleSave} type={modalType} availableCategories={categories} onAddCategory={onAddCategory} onOpenCategoryManager={onOpenCategoryManager} closingDay={closingDay} />
-      {selectedCategory && ( <div className="fixed inset-0 bg-[#521256]/60 backdrop-blur-md z-[150] flex items-center justify-center p-4"><div className="bg-white p-8 rounded-2xl w-full max-w-md"><div className="flex justify-between mb-4"><h3 className="font-bold text-[#521256]">{selectedCategory}</h3><button onClick={() => setSelectedCategory(null)}>Fechar</button></div><div className="max-h-[60vh] overflow-y-auto">{categoryTransactions.map(t => (<div key={t.id} className="flex justify-between py-2 border-b border-gray-100"><span className="text-sm">{t.description}</span><span className="font-bold text-red-500">- R$ {t.amount.toLocaleString('pt-BR')}</span></div>))}</div></div></div> )}
+      {selectedCategory && ( <div className="fixed inset-0 bg-[#521256]/60 backdrop-blur-md z-[150] flex items-center justify-center p-4"><div className="bg-white p-8 rounded-2xl w-full max-w-md"><div className="flex justify-between mb-4"><h3 className="font-bold text-[#521256]">{selectedCategory}</h3><button onClick={() => setSelectedCategory(null)}>Fechar</button></div><div className="max-h-[60vh] overflow-y-auto">{categoryTransactions.map(t => (<div key={t.id} className="flex justify-between items-center py-2 border-b border-gray-100 gap-2"><span className="text-sm flex-1 truncate">{t.description}</span><span className="font-bold text-red-500 whitespace-nowrap">- R$ {t.amount.toLocaleString('pt-BR')}</span>{onDeleteTransaction && (<button onClick={() => handleDelete(t.id)} className="p-1.5 rounded-full text-[#521256]/30 hover:text-red-500 hover:bg-red-50 transition-colors flex-shrink-0" title="Excluir lançamento"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>)}</div>))}</div></div></div> )}
 
       {activeDetailType && (
         <div className="fixed inset-0 bg-[#521256]/60 backdrop-blur-md z-[150] flex items-center justify-center p-4 animate-in fade-in duration-200">
@@ -422,7 +430,14 @@ const Dashboard: React.FC<DashboardProps> = ({
                                     </div>
                                 </div>
                             </div>
-                            <span className={`font-black text-sm ${t.type === TransactionType.INCOME ? 'text-green-600' : 'text-red-500'}`}>{t.type === TransactionType.INCOME ? '+ ' : '- '} R$ {fmt(t.amount)}</span>
+                            <div className="flex items-center gap-2 flex-shrink-0">
+                                <span className={`font-black text-sm ${t.type === TransactionType.INCOME ? 'text-green-600' : 'text-red-500'}`}>{t.type === TransactionType.INCOME ? '+ ' : '- '} R$ {fmt(t.amount)}</span>
+                                {onDeleteTransaction && (
+                                    <button onClick={() => handleDelete(t.id)} className="p-2 rounded-full text-[#521256]/30 hover:text-red-500 hover:bg-red-50 transition-colors" title="Excluir lançamento">
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                    </button>
+                                )}
+                            </div>
                         </div>
                     ))}
                     {detailTransactions.length === 0 && (<p className="text-center text-gray-400 font-bold text-xs py-8">Nenhum lançamento encontrado.</p>)}
