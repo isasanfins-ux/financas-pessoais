@@ -21,7 +21,7 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
   const [amount, setAmount] = useState('');
   const [category, setCategory] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(PaymentMethod.PIX);
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(PaymentMethod.CREDIT_CARD);
   
   const [cardType, setCardType] = useState<'Nubank' | 'Porto'>('Nubank');
   const [isRecurring, setIsRecurring] = useState(false);
@@ -71,7 +71,8 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
         const baseDate = defaultDate || new Date().toISOString().split('T')[0];
         setDate(baseDate);
         
-        setPaymentMethod(PaymentMethod.PIX);
+        // Despesa já abre no crédito (o mais usado); receita fica no pix
+        setPaymentMethod(type === TransactionType.EXPENSE ? PaymentMethod.CREDIT_CARD : PaymentMethod.PIX);
         setIsRecurring(false);
         setInvoiceMonth(calculateInvoiceMonth(baseDate));
         setCardType('Nubank');
@@ -158,9 +159,28 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
           {type === TransactionType.EXPENSE && paymentMethod === PaymentMethod.CREDIT_CARD && (
              <div className="bg-[#efd2fe]/40 p-4 rounded-xl animate-in slide-in-from-top-2 border border-[#f170c3]/20">
                 <label className="text-[10px] font-black text-[#521256]/60 uppercase tracking-widest mb-2 block">Qual Cartão?</label>
-                <div className="flex gap-3 mb-4">
-                    <button type="button" onClick={() => setCardType('Nubank')} className={`flex-1 py-3 rounded-xl font-black text-xs transition-all flex items-center justify-center gap-2 ${cardType === 'Nubank' ? 'bg-[#820ad1] text-white shadow-lg scale-105' : 'bg-white text-[#820ad1] border border-[#820ad1]/20'}`}>🟣 Nubank</button>
-                    <button type="button" onClick={() => setCardType('Porto')} className={`flex-1 py-3 rounded-xl font-black text-xs transition-all flex items-center justify-center gap-2 ${cardType === 'Porto' ? 'bg-[#00a1fc] text-white shadow-lg scale-105' : 'bg-white text-[#00a1fc] border border-[#00a1fc]/20'}`}>🔵 Porto</button>
+                <div className="grid grid-cols-2 gap-3 mb-4">
+                    <button type="button" onClick={() => setCardType('Nubank')} className={`relative overflow-hidden rounded-2xl p-4 text-left transition-all duration-300 ${cardType === 'Nubank' ? 'bg-gradient-to-br from-[#820ad1] to-[#a437e0] text-white shadow-xl shadow-[#820ad1]/30 scale-[1.03]' : 'bg-white text-[#820ad1] border-2 border-[#820ad1]/15 hover:border-[#820ad1]/40'}`}>
+                        {cardType === 'Nubank' && (
+                            <span className="absolute top-2.5 right-2.5 w-5 h-5 bg-white rounded-full flex items-center justify-center shadow-sm">
+                                <svg className="w-3 h-3 text-[#820ad1]" fill="none" stroke="currentColor" strokeWidth="3" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                            </span>
+                        )}
+                        <div className={`w-8 h-6 rounded-md mb-3 ${cardType === 'Nubank' ? 'bg-white/25' : 'bg-[#820ad1]/10'}`}></div>
+                        <p className="text-sm font-black leading-none flex items-center gap-1.5">🟣 Nubank</p>
+                        <p className={`text-[9px] font-black uppercase tracking-widest mt-1.5 ${cardType === 'Nubank' ? 'text-white/70' : 'opacity-40'}`}>Principal</p>
+                    </button>
+
+                    <button type="button" onClick={() => setCardType('Porto')} className={`relative overflow-hidden rounded-2xl p-4 text-left transition-all duration-300 ${cardType === 'Porto' ? 'bg-gradient-to-br from-[#00a1fc] to-[#3bbcff] text-white shadow-xl shadow-[#00a1fc]/30 scale-[1.03]' : 'bg-white text-[#00a1fc] border-2 border-[#00a1fc]/15 hover:border-[#00a1fc]/40'}`}>
+                        {cardType === 'Porto' && (
+                            <span className="absolute top-2.5 right-2.5 w-5 h-5 bg-white rounded-full flex items-center justify-center shadow-sm">
+                                <svg className="w-3 h-3 text-[#00a1fc]" fill="none" stroke="currentColor" strokeWidth="3" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                            </span>
+                        )}
+                        <div className={`w-8 h-6 rounded-md mb-3 ${cardType === 'Porto' ? 'bg-white/25' : 'bg-[#00a1fc]/10'}`}></div>
+                        <p className="text-sm font-black leading-none flex items-center gap-1.5">🔵 Porto</p>
+                        <p className={`text-[9px] font-black uppercase tracking-widest mt-1.5 ${cardType === 'Porto' ? 'text-white/70' : 'opacity-40'}`}>Secundário</p>
+                    </button>
                 </div>
 
                 <div className="flex gap-4 mb-4">
