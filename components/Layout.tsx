@@ -46,7 +46,6 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange, onPro
 
         <nav className="flex-1 space-y-2">
           <NavItem id="dashboard" label="Dashboard" icon={icons.dashboard} />
-          <NavItem id="market" label="Mercado & Consumo" icon={icons.market} /> {/* <--- AQUI */}
           <NavItem id="investments" label="Investimentos" icon={icons.investments} />
           <NavItem id="reports" label="Relatórios" icon={icons.reports} />
           <NavItem id="history" label="Extrato" icon={icons.history} />
@@ -93,10 +92,6 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange, onPro
         <button onClick={() => onTabChange('dashboard')} className={`flex flex-col items-center ${activeTab === 'dashboard' ? 'text-[#f170c3]' : 'text-[#521256] opacity-60'}`}>
           {icons.dashboard}
           <span className="text-[10px] mt-1 font-semibold">Home</span>
-        </button>
-        <button onClick={() => onTabChange('market')} className={`flex flex-col items-center ${activeTab === 'market' ? 'text-[#f170c3]' : 'text-[#521256] opacity-60'}`}>
-          {icons.market}
-          <span className="text-[10px] mt-1 font-semibold">Mercado</span>
         </button>
         <button onClick={() => onTabChange('history')} className={`flex flex-col items-center ${activeTab === 'history' ? 'text-[#f170c3]' : 'text-[#521256] opacity-60'}`}>
           {icons.history}
