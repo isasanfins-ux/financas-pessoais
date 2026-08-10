@@ -275,11 +275,11 @@ const Dashboard: React.FC<DashboardProps> = ({
           <FlowItem label="Cartões 💳" value={stats.cartoesFaturaAtual} valueColor="#521256" onClick={() => setActiveDetailType('CREDIT')} />
           <Operator symbol="=" />
 
-          <div className="flex-[1.4] min-w-[180px] rounded-[1.5rem] px-6 py-4 shadow-xl shadow-[#f170c3]/30 flex flex-col justify-center relative overflow-hidden" style={{ backgroundColor: stats.sobra >= 0 ? '#f170c3' : '#521256' }}>
-            <span className="text-[10px] uppercase tracking-widest font-black text-white/70">
-              {stats.sobra >= 0 ? '✨ Sobra pra investir ou aproveitar' : '⚠️ Você passou do orçamento'}
+          <div className={`flex-[1.4] min-w-[180px] rounded-[1.5rem] px-6 py-4 shadow-xl flex flex-col justify-center relative overflow-hidden ${stats.sobra >= 0 ? 'shadow-[#f170c3]/30' : 'shadow-[#521256]/10 border border-[#521256]/5'}`} style={{ backgroundColor: stats.sobra >= 0 ? '#f170c3' : '#efd2fe' }}>
+            <span className={`text-[10px] uppercase tracking-widest font-black ${stats.sobra >= 0 ? 'text-white/70' : 'text-[#521256]/50'}`}>
+              {stats.sobra >= 0 ? '✨ Sobra pra investir ou aproveitar' : '💜 Resultado do mês'}
             </span>
-            <h3 className="text-2xl lg:text-3xl font-black mt-1 tracking-tight text-white">R$ {fmt(stats.sobra)}</h3>
+            <h3 className={`text-2xl lg:text-3xl font-black mt-1 tracking-tight ${stats.sobra >= 0 ? 'text-white' : 'text-[#521256]'}`}>R$ {fmt(stats.sobra)}</h3>
           </div>
         </div>
         <p className="text-[10px] font-bold text-[#521256]/40 mt-3 ml-2 uppercase tracking-widest">
