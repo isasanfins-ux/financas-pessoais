@@ -29,7 +29,6 @@ interface DashboardProps {
   onUpdateInitialCreditBill?: (val: number) => void;
   onUpdateTotalCreditLimit: (val: number) => void;
   onUpdateNextMonthInvoice: (val: number) => void;
-  closingDay?: number; 
   budgets?: import('../types').CategoryBudget[];
   onUpdateBudget?: (category: string, limit: number) => void;
   onDeleteBudget?: (category: string) => void;
@@ -53,7 +52,6 @@ const Dashboard: React.FC<DashboardProps> = ({
   onUpdateNubankBill,
   onUpdatePortoBill,
   onUpdateTotalCreditLimit,
-  closingDay = 6,
   budgets = [],
   onUpdateBudget = () => {},
   onDeleteBudget = () => {}
@@ -97,13 +95,13 @@ const Dashboard: React.FC<DashboardProps> = ({
     const safeAll = allTransactions || [];
     const safeMonthly = transactions || [];
 
+    // A Fatura de Referência agora é sempre escolhida manualmente no lançamento (não tem
+    // mais regra de "dia de corte"). O fallback abaixo só serve pra lançamentos antigos que
+    // não tinham esse campo — nesses casos, usa o mês da própria data, sem deslocar.
     const filterByMonth = (t: Transaction, targetMonth: string) => {
       if (t.invoiceMonth) return t.invoiceMonth === targetMonth;
       if (!t.date) return false;
-      const [y, m, d] = t.date.split('-').map(Number);
-      let tm = m, ty = y;
-      if (d > closingDay) { tm++; if(tm>12){tm=1;ty++} }
-      return `${ty}-${String(tm).padStart(2, '0')}` === targetMonth;
+      return t.date.slice(0, 7) === targetMonth;
     };
 
     const gastosNubankAtual = safeAll
@@ -138,6 +136,10 @@ const Dashboard: React.FC<DashboardProps> = ({
     const pagamentosFatura = safeMonthly.filter(t => t.category === PAYMENT_CATEGORY).reduce((acc, curr) => acc + curr.amount, 0);
 
     const cartoesFaturaAtual = totalFaturaNubankAtual + totalFaturaPortoAtual;
+    // Fatura Aberta: o que já tá acumulando nos dois cartões agora, pra ser pago no mês
+    // seguinte. É esse valor que aparece na Dobra 1 — fica mais fácil de acompanhar o que
+    // ainda vai vir, em vez do que já fechou.
+    const cartoesFaturaAberta = totalFaturaNubankProxima + totalFaturaPortoProxima;
 
     const sobra = receitas - saidas - cartoesFaturaAtual;
 
@@ -160,14 +162,17 @@ const Dashboard: React.FC<DashboardProps> = ({
     const cumPagamentosFatura = cumulativeUpToMonth.filter(t => t.category === PAYMENT_CATEGORY).reduce((acc, curr) => acc + curr.amount, 0);
     const saldoConta = initialBalance + cumReceitas - cumImediatas - cumPagamentosFatura;
 
-    // Saldo Real: o que você tem de fato, já descontando a fatura aberta que ainda vai sair
-    const saldoReal = saldoConta - cartoesFaturaAtual;
+    // Saldo Real: o que você tem de fato, já descontando a fatura ABERTA (a que vai sair
+    // da conta no mês que vem — é essa que ainda pode mudar/crescer, então é ela que importa
+    // pra saber o que sobra de verdade)
+    const saldoReal = saldoConta - cartoesFaturaAberta;
 
     return {
       saldo: saldoConta,
       receitas,
       saidas,
       cartoesFaturaAtual,
+      cartoesFaturaAberta,
       sobra,
       saldoReal,
       despesasConta: immediateExpenses,
@@ -177,7 +182,7 @@ const Dashboard: React.FC<DashboardProps> = ({
       totalCreditUsed,
       cardExpenses
     };
-  }, [transactions, allTransactions, initialBalance, initialNubankBill, initialPortoBill, totalCreditLimit, currentInvoiceMonth, nextInvoiceMonth, closingDay, nubankView, portoView]);
+  }, [transactions, allTransactions, initialBalance, initialNubankBill, initialPortoBill, totalCreditLimit, currentInvoiceMonth, nextInvoiceMonth, nubankView, portoView]);
 
   const categoryTransactions = useMemo(() => {
     if (!selectedCategory) return [];
@@ -190,17 +195,15 @@ const Dashboard: React.FC<DashboardProps> = ({
     const filterByMonthHelper = (t: Transaction, targetMonth: string) => {
       if (t.invoiceMonth) return t.invoiceMonth === targetMonth;
       if (!t.date) return false;
-      const [y, m, d] = t.date.split('-').map(Number);
-      let tm = m, ty = y;
-      if (d > closingDay) { tm++; if(tm>12){tm=1;ty++} }
-      return `${ty}-${String(tm).padStart(2, '0')}` === targetMonth;
+      return t.date.slice(0, 7) === targetMonth;
     };
 
     if (activeDetailType === 'INCOME') return transactions.filter(t => t.type === TransactionType.INCOME).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     if (activeDetailType === 'DEBIT') return transactions.filter(t => t.type === TransactionType.EXPENSE && t.paymentMethod !== PaymentMethod.CREDIT_CARD && t.category !== PAYMENT_CATEGORY).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     
+    // Cartões da Dobra 1 = fatura ABERTA (próximo mês), pra bater com o número mostrado
     if (activeDetailType === 'CREDIT') {
-      return allTransactions.filter(t => t.type === TransactionType.EXPENSE && t.paymentMethod === PaymentMethod.CREDIT_CARD && filterByMonthHelper(t, currentInvoiceMonth)).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      return allTransactions.filter(t => t.type === TransactionType.EXPENSE && t.paymentMethod === PaymentMethod.CREDIT_CARD && filterByMonthHelper(t, nextInvoiceMonth)).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     }
 
     if (activeDetailType === 'CREDIT_NUBANK') {
@@ -214,7 +217,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     }
 
     return [];
-  }, [activeDetailType, transactions, allTransactions, currentInvoiceMonth, nextInvoiceMonth, closingDay, nubankView, portoView]);
+  }, [activeDetailType, transactions, allTransactions, currentInvoiceMonth, nextInvoiceMonth, nubankView, portoView]);
 
   const handleOpenModal = (type: TransactionType) => { setModalType(type); setIsModalOpen(true); };
   const handleSave = (t: Partial<Transaction>) => { onAddTransaction({ ...t, id: Math.random().toString(), createdAt: Date.now() } as any); };
@@ -268,7 +271,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     switch(activeDetailType) {
         case 'INCOME': return 'Entradas 🤑';
         case 'DEBIT': return 'Saídas (Débito/Pix) 🔻';
-        case 'CREDIT': return 'Cartões — Fatura Atual 💳';
+        case 'CREDIT': return 'Cartões — Fatura Aberta 💳';
         case 'CREDIT_NUBANK': return `Fatura Nubank (${nubankView === 'CURRENT' ? 'Atual' : 'Próxima'}) 🟣`;
         case 'CREDIT_PORTO': return `Fatura Porto (${portoView === 'CURRENT' ? 'Atual' : 'Próxima'}) 🔵`;
         default: return 'Detalhes';
@@ -286,10 +289,10 @@ const Dashboard: React.FC<DashboardProps> = ({
           <Operator symbol="−" />
           <FlowItem label="Saídas 🔻" value={stats.saidas} valueColor="#ef4444" onClick={() => setActiveDetailType('DEBIT')} />
           <Operator symbol="−" />
-          <FlowItem label="Cartões 💳" value={stats.cartoesFaturaAtual} valueColor="#521256" onClick={() => setActiveDetailType('CREDIT')} />
+          <FlowItem label="Cartões (fatura aberta) 💳" value={stats.cartoesFaturaAberta} valueColor="#521256" onClick={() => setActiveDetailType('CREDIT')} />
         </div>
         <p className="text-[10px] font-bold text-[#521256]/40 mt-3 ml-2 uppercase tracking-widest">
-          Como foi este mês — clique em qualquer valor pra ver os detalhes 👆
+          Cartões mostra a fatura aberta (paga mês que vem) · clique pra ver detalhes 👆
         </p>
 
         {/* SALDO REAL — automático, rola sozinho mês a mês, com ajuste manual disponível */}
@@ -437,7 +440,7 @@ const Dashboard: React.FC<DashboardProps> = ({
         onDeleteBudget={onDeleteBudget}
       />
 
-      <TransactionModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onSave={handleSave} type={modalType} availableCategories={categories} onAddCategory={onAddCategory} onOpenCategoryManager={onOpenCategoryManager} closingDay={closingDay} />
+      <TransactionModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onSave={handleSave} type={modalType} availableCategories={categories} onAddCategory={onAddCategory} onOpenCategoryManager={onOpenCategoryManager} />
       {selectedCategory && ( <div className="fixed inset-0 bg-[#521256]/60 backdrop-blur-md z-[150] flex items-center justify-center p-4"><div className="bg-white p-8 rounded-2xl w-full max-w-md"><div className="flex justify-between mb-4"><h3 className="font-bold text-[#521256]">{selectedCategory}</h3><button onClick={() => setSelectedCategory(null)}>Fechar</button></div><div className="max-h-[60vh] overflow-y-auto">{categoryTransactions.map(t => (<div key={t.id} className="flex justify-between items-center py-2 border-b border-gray-100 gap-2"><span className="text-sm flex-1 truncate">{t.description}</span><span className="font-bold text-red-500 whitespace-nowrap">- R$ {t.amount.toLocaleString('pt-BR')}</span>{onDeleteTransaction && (<button onClick={() => handleDelete(t.id)} className="p-1.5 rounded-full text-[#521256]/30 hover:text-red-500 hover:bg-red-50 transition-colors flex-shrink-0" title="Excluir lançamento"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>)}</div>))}</div></div></div> )}
 
       {activeDetailType && (
