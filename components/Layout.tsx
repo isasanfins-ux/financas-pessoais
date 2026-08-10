@@ -93,9 +93,17 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, onTabChange, onPro
           {icons.dashboard}
           <span className="text-[10px] mt-1 font-semibold">Home</span>
         </button>
+        <button onClick={() => onTabChange('investments')} className={`flex flex-col items-center ${activeTab === 'investments' ? 'text-[#f170c3]' : 'text-[#521256] opacity-60'}`}>
+          {icons.investments}
+          <span className="text-[10px] mt-1 font-semibold">Investir</span>
+        </button>
+        <button onClick={() => onTabChange('reports')} className={`flex flex-col items-center ${activeTab === 'reports' ? 'text-[#f170c3]' : 'text-[#521256] opacity-60'}`}>
+          {icons.reports}
+          <span className="text-[10px] mt-1 font-semibold">Relatórios</span>
+        </button>
         <button onClick={() => onTabChange('history')} className={`flex flex-col items-center ${activeTab === 'history' ? 'text-[#f170c3]' : 'text-[#521256] opacity-60'}`}>
           {icons.history}
-          <span className="text-[10px] mt-1 font-semibold">Extra</span>
+          <span className="text-[10px] mt-1 font-semibold">Extrato</span>
         </button>
       </nav>
     </div>
