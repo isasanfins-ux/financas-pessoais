@@ -1,7 +1,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import { Transaction, TransactionType, PaymentMethod } from '../types';
-import { CHART_COLORS, COLORS } from '../constants';
+import { CHART_COLORS, COLORS, getCategoryColor, getCategoryIcon } from '../constants';
 import TransactionModal from './TransactionModal';
 import Planning from './Planning';
 
@@ -150,12 +150,26 @@ const Dashboard: React.FC<DashboardProps> = ({
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
       .slice(0, 3);
 
+    // Saldo em Conta: agora é CUMULATIVO — soma tudo que já aconteceu até o fim do mês
+    // selecionado (não só o mês atual), então ele rola sozinho de mês a mês, sem precisar
+    // recalibrar toda vez que você troca de mês. A calibração (⚙️) continua disponível
+    // pra ajustar manualmente se algo fugir do lançamento.
+    const cumulativeUpToMonth = safeAll.filter(t => t.date && t.date.slice(0, 7) <= currentInvoiceMonth);
+    const cumReceitas = cumulativeUpToMonth.filter(t => t.type === TransactionType.INCOME).reduce((acc, curr) => acc + curr.amount, 0);
+    const cumImediatas = cumulativeUpToMonth.filter(t => t.type === TransactionType.EXPENSE && t.paymentMethod !== PaymentMethod.CREDIT_CARD && t.category !== PAYMENT_CATEGORY).reduce((acc, curr) => acc + curr.amount, 0);
+    const cumPagamentosFatura = cumulativeUpToMonth.filter(t => t.category === PAYMENT_CATEGORY).reduce((acc, curr) => acc + curr.amount, 0);
+    const saldoConta = initialBalance + cumReceitas - cumImediatas - cumPagamentosFatura;
+
+    // Saldo Real: o que você tem de fato, já descontando a fatura aberta que ainda vai sair
+    const saldoReal = saldoConta - cartoesFaturaAtual;
+
     return {
-      saldo: initialBalance + receitas - immediateExpenses - pagamentosFatura,
+      saldo: saldoConta,
       receitas,
       saidas,
       cartoesFaturaAtual,
       sobra,
+      saldoReal,
       despesasConta: immediateExpenses,
       nubank: { atual: totalFaturaNubankAtual, proxima: totalFaturaNubankProxima, gastosMes: gastosNubankAtual },
       porto: { atual: totalFaturaPortoAtual, proxima: totalFaturaPortoProxima, gastosMes: gastosPortoAtual },
@@ -273,18 +287,24 @@ const Dashboard: React.FC<DashboardProps> = ({
           <FlowItem label="Saídas 🔻" value={stats.saidas} valueColor="#ef4444" onClick={() => setActiveDetailType('DEBIT')} />
           <Operator symbol="−" />
           <FlowItem label="Cartões 💳" value={stats.cartoesFaturaAtual} valueColor="#521256" onClick={() => setActiveDetailType('CREDIT')} />
-          <Operator symbol="=" />
-
-          <div className={`flex-[1.4] min-w-[180px] rounded-[1.5rem] px-6 py-4 shadow-xl flex flex-col justify-center relative overflow-hidden ${stats.sobra >= 0 ? 'shadow-[#f170c3]/30' : 'shadow-[#521256]/10 border border-[#521256]/5'}`} style={{ backgroundColor: stats.sobra >= 0 ? '#f170c3' : '#efd2fe' }}>
-            <span className={`text-[10px] uppercase tracking-widest font-black ${stats.sobra >= 0 ? 'text-white/70' : 'text-[#521256]/50'}`}>
-              {stats.sobra >= 0 ? '✨ Sobra pra investir ou aproveitar' : '💜 Resultado do mês'}
-            </span>
-            <h3 className={`text-2xl lg:text-3xl font-black mt-1 tracking-tight ${stats.sobra >= 0 ? 'text-white' : 'text-[#521256]'}`}>R$ {fmt(stats.sobra)}</h3>
-          </div>
         </div>
         <p className="text-[10px] font-bold text-[#521256]/40 mt-3 ml-2 uppercase tracking-widest">
-          Clique em qualquer valor pra ver os detalhes 👆
+          Como foi este mês — clique em qualquer valor pra ver os detalhes 👆
         </p>
+
+        {/* SALDO REAL — automático, rola sozinho mês a mês, com ajuste manual disponível */}
+        <div className={`mt-4 rounded-[1.5rem] px-6 py-4 shadow-xl flex items-center justify-between gap-4 relative overflow-hidden ${stats.saldoReal >= 0 ? 'shadow-[#f170c3]/30' : 'shadow-[#521256]/10 border border-[#521256]/5'}`} style={{ backgroundColor: stats.saldoReal >= 0 ? '#f170c3' : '#efd2fe' }}>
+          <div>
+            <span className={`text-[10px] uppercase tracking-widest font-black block ${stats.saldoReal >= 0 ? 'text-white/70' : 'text-[#521256]/50'}`}>
+              {stats.saldoReal >= 0 ? '✨ Sobra pra investir ou aproveitar' : '💜 Saldo disponível'}
+            </span>
+            <h3 className={`text-2xl lg:text-3xl font-black mt-1 tracking-tight ${stats.saldoReal >= 0 ? 'text-white' : 'text-[#521256]'}`}>R$ {fmt(stats.saldoReal)}</h3>
+            <p className={`text-[9px] font-bold mt-1 uppercase tracking-widest ${stats.saldoReal >= 0 ? 'text-white/50' : 'text-[#521256]/35'}`}>Atualiza sozinho · já descontando a fatura aberta</p>
+          </div>
+          <button onClick={openBalanceCalibration} title="Ajustar saldo manualmente" className={`p-2.5 rounded-full transition-colors flex-shrink-0 ${stats.saldoReal >= 0 ? 'bg-white/15 hover:bg-white/25 text-white' : 'bg-[#521256]/5 hover:bg-[#521256]/10 text-[#521256]/60'}`}>
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+          </button>
+        </div>
       </div>
 
       <div className="flex flex-wrap gap-4 items-center">
@@ -302,7 +322,7 @@ const Dashboard: React.FC<DashboardProps> = ({
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie data={categoryData} cx="50%" cy="50%" innerRadius={70} outerRadius={110} paddingAngle={5} dataKey="value" stroke="none">
-                    {categoryData.map((entry, index) => (<Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />))}
+                    {categoryData.map((entry, index) => (<Cell key={`cell-${index}`} fill={getCategoryColor(entry.name)} />))}
                   </Pie>
                   <Tooltip contentStyle={{ borderRadius: '1.2rem', border: 'none', boxShadow: '0 10px 25px rgba(0,0,0,0.05)', padding: '0.8rem' }} formatter={(value: number, name: string) => [`R$ ${fmt(value)}`, name]} />
                 </PieChart>
@@ -312,8 +332,8 @@ const Dashboard: React.FC<DashboardProps> = ({
               {categoryData.map((entry, index) => (
                 <div key={index} onClick={() => setSelectedCategory(entry.name)} className="flex items-center justify-between p-3 rounded-2xl hover:bg-white transition-colors cursor-pointer group border border-transparent hover:border-[#f170c3]/20 hover:shadow-md">
                   <div className="flex items-center gap-3">
-                    <div className="w-4 h-4 rounded-full shadow-sm" style={{ backgroundColor: CHART_COLORS[index % CHART_COLORS.length] }}></div>
-                    <div><p className="text-xs font-black text-[#521256] group-hover:text-[#f170c3] transition-colors">{entry.name}</p><p className="text-[10px] font-bold opacity-40">{entry.percent.toFixed(1)}%</p></div>
+                    <div className="w-4 h-4 rounded-full shadow-sm" style={{ backgroundColor: getCategoryColor(entry.name) }}></div>
+                    <div><p className="text-xs font-black text-[#521256] group-hover:text-[#f170c3] transition-colors">{getCategoryIcon(entry.name)} {entry.name}</p><p className="text-[10px] font-bold opacity-40">{entry.percent.toFixed(1)}%</p></div>
                   </div>
                   <div className="text-right"><span className="text-sm font-black text-[#521256]">R$ {fmt(entry.value)}</span></div>
                 </div>
