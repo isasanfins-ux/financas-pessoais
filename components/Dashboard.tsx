@@ -457,13 +457,20 @@ const Dashboard: React.FC<DashboardProps> = ({
                 </div>
                 <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-3">
                     {detailTransactions.map(t => (
-                        <div key={t.id} className="flex justify-between items-center p-4 bg-[#efd2fe]/20 rounded-2xl border border-transparent hover:border-[#f170c3]/30 transition-colors">
+                        <div key={t.id} className={`flex justify-between items-center p-4 rounded-2xl border transition-colors ${!t.cardType && activeDetailType.startsWith('CREDIT') ? 'bg-yellow-50 border-yellow-300' : 'bg-[#efd2fe]/20 border-transparent hover:border-[#f170c3]/30'}`}>
                             <div className="flex items-center gap-3">
                                 {activeDetailType.startsWith('CREDIT') && (
-                                    <span className="text-lg" title={t.cardType === 'Porto' ? 'Porto' : 'Nubank'}>{t.cardType === 'Porto' ? '🔵' : '🟣'}</span>
+                                    t.cardType ? (
+                                        <span className="text-lg" title={t.cardType}>{t.cardType === 'Porto' ? '🔵' : '🟣'}</span>
+                                    ) : (
+                                        <span className="text-lg" title="Sem cartão definido — hoje está contando como Nubank">⚠️</span>
+                                    )
                                 )}
                                 <div>
                                     <p className="font-bold text-[#521256] text-sm">{t.description}</p>
+                                    {!t.cardType && activeDetailType.startsWith('CREDIT') && (
+                                        <p className="text-[9px] text-yellow-700 font-bold uppercase">Sem cartão definido</p>
+                                    )}
                                     <div className="flex items-center gap-2">
                                         <p className="text-[10px] opacity-50 font-bold uppercase">{new Date(t.date).toLocaleDateString('pt-BR')}</p>
                                         {t.installment && t.installment.total > 1 && (
