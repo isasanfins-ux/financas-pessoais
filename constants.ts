@@ -1,4 +1,3 @@
-
 import { TransactionType, PaymentMethod, Transaction, InvestmentGoal } from './types';
 
 export const COLORS = {
@@ -46,3 +45,31 @@ export const INITIAL_GOALS: InvestmentGoal[] = [
 export const CHART_COLORS = [
   '#f170c3', '#e2e585', '#521256', '#a188f7', '#ffb5e8', '#ffd1dc'
 ];
+
+// Emoji fixo por categoria — aparece do lado do nome nas listas (não no gráfico)
+export const CATEGORY_ICONS: Record<string, string> = {
+  'Alimentação (mercado)': '🛒',
+  'Alimentação (iFood)': '🍔',
+  'Carro': '🚗',
+  'Pet': '🐾',
+  'Lazer': '🎉',
+  'Saúde': '💊',
+  'Moradia': '🏠',
+  'Renda': '💰',
+  'Educação': '📚',
+  'Assinaturas': '📱',
+  'Pagamento de Fatura': '💳',
+};
+
+// Cor fixa por categoria — mesma paleta da pizza, mas sempre a mesma cor pra mesma categoria
+// (categorias conhecidas seguem a ordem de INITIAL_CATEGORIES; categorias novas ganham uma cor
+// consistente via hash do nome, então nunca mudam de cor de mês pra mês)
+export const getCategoryColor = (category: string): string => {
+  const idx = INITIAL_CATEGORIES.indexOf(category);
+  if (idx >= 0) return CHART_COLORS[idx % CHART_COLORS.length];
+  let hash = 0;
+  for (let i = 0; i < category.length; i++) hash = category.charCodeAt(i) + ((hash << 5) - hash);
+  return CHART_COLORS[Math.abs(hash) % CHART_COLORS.length];
+};
+
+export const getCategoryIcon = (category: string): string => CATEGORY_ICONS[category] || '🏷️';
