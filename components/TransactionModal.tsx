@@ -10,12 +10,11 @@ interface TransactionModalProps {
   initialData?: Transaction | null;
   onAddCategory?: (name: string) => void;
   onOpenCategoryManager?: () => void;
-  closingDay?: number;
   defaultDate?: string;
 }
 
 const TransactionModal: React.FC<TransactionModalProps> = ({ 
-  isOpen, onClose, onSave, type, availableCategories = [], initialData, onAddCategory, onOpenCategoryManager, closingDay = 6, defaultDate 
+  isOpen, onClose, onSave, type, availableCategories = [], initialData, onAddCategory, onOpenCategoryManager, defaultDate 
 }) => {
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
@@ -33,12 +32,12 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
   const [currentInstallment, setCurrentInstallment] = useState(1);
   const [totalInstallments, setTotalInstallments] = useState(1);
 
+  // Fatura de Referência agora é 100% manual: a sugestão inicial é só o mês da própria
+  // compra (sem regra de "dia de corte"), e depois disso é você quem decide — o app não
+  // recalcula mais sozinho quando você edita a data.
   const calculateInvoiceMonth = (purchaseDate: string) => {
     if (!purchaseDate) return new Date().toISOString().slice(0, 7);
-    const pDate = new Date(purchaseDate + 'T12:00:00');
-    const day = pDate.getDate();
-    if (day > closingDay) { pDate.setMonth(pDate.getMonth() + 1); }
-    return pDate.toISOString().slice(0, 7);
+    return purchaseDate.slice(0, 7);
   };
 
   useEffect(() => {
@@ -80,11 +79,11 @@ const TransactionModal: React.FC<TransactionModalProps> = ({
         setTotalInstallments(1);
       }
     }
-  }, [isOpen, initialData, closingDay, defaultDate]);
+  }, [isOpen, initialData, defaultDate]);
 
-  useEffect(() => {
-    if (!initialData && date) { setInvoiceMonth(calculateInvoiceMonth(date)); }
-  }, [date, closingDay]);
+  // Removido de propósito: antes esse efeito recalculava a Fatura de Referência toda vez
+  // que a data mudava, o que podia sobrescrever sua escolha manual sem avisar. Agora a
+  // fatura só é sugerida uma vez, na abertura do modal — depois disso é 100% manual.
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
