@@ -30,7 +30,6 @@ const App: React.FC = () => {
   const [allTransactions, setAllTransactions] = useState<Transaction[]>([]);
   
   // CONFIGURAÇÕES
-  const [closingDay, setClosingDay] = useState<number>(6); 
   const [dueDay, setDueDay] = useState<number>(13);       
 
   const monthlyTransactions = useMemo(() => {
@@ -136,7 +135,6 @@ const App: React.FC = () => {
         setTotalCreditLimit(data.totalCreditLimit || 5000);
         setNextMonthInvoice(data.nextMonthInvoice || 0);
         setHiddenCategories(data.hiddenCategories || []);
-        if (data.closingDay) setClosingDay(data.closingDay);
         if (data.dueDay) setDueDay(data.dueDay);
       }
     });
@@ -230,10 +228,11 @@ const App: React.FC = () => {
     try {
         if (t.isRecurring) {
             const startDate = new Date(t.date + 'T12:00:00');
+            // A Fatura de Referência vem sempre do que foi escolhido manualmente no modal
+            // (t.invoiceMonth). Esse fallback só entra em cena se por algum motivo ela não
+            // vier preenchida — aí usa o mês da própria data, sem regra de corte.
             let startInvoiceDate = t.invoiceMonth ? new Date(t.invoiceMonth + '-02') : null;
             if (!startInvoiceDate && t.type === 'EXPENSE' && t.paymentMethod === 'Cartão de Crédito') {
-               const day = startDate.getDate();
-               if (day > closingDay) startDate.setMonth(startDate.getMonth() + 1);
                startInvoiceDate = startDate;
             }
             for (let i = 0; i < 12; i++) {
@@ -313,7 +312,6 @@ const App: React.FC = () => {
                 onUpdatePortoBill={(v) => updSet({ initialPortoBill: v })}   
                 onUpdateTotalCreditLimit={(v) => updSet({ totalCreditLimit: v })}
                 onUpdateNextMonthInvoice={(v) => updSet({ nextMonthInvoice: v })}
-                closingDay={closingDay}
                 onAddCategory={handleQuickAddCategory} // <--- CONECTADO AQUI!
                 onDeleteTransaction={deleteTransaction}
                 budgets={budgets}
