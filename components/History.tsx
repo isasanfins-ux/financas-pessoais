@@ -19,11 +19,15 @@ const History: React.FC<HistoryProps> = ({
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [addModalType, setAddModalType] = useState<TransactionType>(TransactionType.EXPENSE);
   const [filterType, setFilterType] = useState<'ALL' | 'INCOME' | 'EXPENSE'>('ALL');
+  const [cardFilter, setCardFilter] = useState<'ALL' | 'Nubank' | 'Porto'>('ALL');
 
   const filteredTransactions = useMemo(() => {
-    if (filterType === 'ALL') return transactions;
-    return transactions.filter(t => t.type === filterType);
-  }, [transactions, filterType]);
+    let result = filterType === 'ALL' ? transactions : transactions.filter(t => t.type === filterType);
+    if (cardFilter !== 'ALL') {
+      result = result.filter(t => t.paymentMethod === PaymentMethod.CREDIT_CARD && (t.cardType === cardFilter || (!t.cardType && cardFilter === 'Nubank')));
+    }
+    return result;
+  }, [transactions, filterType, cardFilter]);
 
   // --- AQUI ESTÁ A MÁGICA DA ORGANIZAÇÃO! ✨ ---
   const groupedTransactions = useMemo(() => {
@@ -85,6 +89,13 @@ const History: React.FC<HistoryProps> = ({
         <button onClick={() => setFilterType('ALL')} className={`flex-1 py-2 rounded-lg text-xs font-black transition-all ${filterType === 'ALL' ? 'bg-white text-[#521256] shadow-sm' : 'text-[#521256]/50 hover:bg-white/50'}`}>Todos</button>
         <button onClick={() => setFilterType('INCOME')} className={`flex-1 py-2 rounded-lg text-xs font-black transition-all ${filterType === 'INCOME' ? 'bg-white text-green-600 shadow-sm' : 'text-[#521256]/50 hover:bg-white/50'}`}>Entradas</button>
         <button onClick={() => setFilterType('EXPENSE')} className={`flex-1 py-2 rounded-lg text-xs font-black transition-all ${filterType === 'EXPENSE' ? 'bg-white text-red-500 shadow-sm' : 'text-[#521256]/50 hover:bg-white/50'}`}>Saídas</button>
+      </div>
+
+      {/* Filtro por cartão — útil pra conferir se algum lançamento caiu no cartão errado */}
+      <div className="flex gap-2 mx-2 mt-3">
+        <button onClick={() => setCardFilter('ALL')} className={`px-4 py-2 rounded-full text-xs font-black transition-all ${cardFilter === 'ALL' ? 'bg-[#521256] text-white shadow-sm' : 'bg-white text-[#521256]/50 border border-[#efd2fe]'}`}>Todos os cartões</button>
+        <button onClick={() => setCardFilter('Nubank')} className={`px-4 py-2 rounded-full text-xs font-black transition-all flex items-center gap-1.5 ${cardFilter === 'Nubank' ? 'bg-[#820ad1] text-white shadow-sm' : 'bg-white text-[#820ad1]/60 border border-[#820ad1]/20'}`}>🟣 Nubank</button>
+        <button onClick={() => setCardFilter('Porto')} className={`px-4 py-2 rounded-full text-xs font-black transition-all flex items-center gap-1.5 ${cardFilter === 'Porto' ? 'bg-[#00a1fc] text-white shadow-sm' : 'bg-white text-[#00a1fc]/60 border border-[#00a1fc]/20'}`}>🔵 Porto</button>
       </div>
 
       {filteredTransactions.length === 0 ? (
