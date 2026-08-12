@@ -356,7 +356,7 @@ const Dashboard: React.FC<DashboardProps> = ({
              </div>
              <div className="text-right">
                <span className="text-[10px] font-black opacity-40 uppercase tracking-widest block">Limite Global</span>
-               <button onClick={openLimitCalibration} className="text-xl font-black text-[#521256] hover:text-[#f170c3] transition-colors">R$ {(stats.limiteTotal - stats.totalCreditUsed).toLocaleString('pt-BR')}</button>
+               <button onClick={openLimitCalibration} className="text-xl font-black text-[#521256] hover:text-[#f170c3] transition-colors">R$ {fmt(stats.limiteTotal - stats.totalCreditUsed)}</button>
              </div>
            </div>
         </div>
@@ -382,7 +382,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                     </div>
                 </div>
                 <p className="text-[10px] font-bold opacity-60 uppercase tracking-widest mb-1">{nubankView === 'CURRENT' ? 'Fatura Atual (Aberta)' : 'Fatura Seguinte (Previsão)'}</p>
-                <h2 className="text-4xl font-black mb-2">R$ {nubankView === 'CURRENT' ? stats.nubank.atual.toLocaleString('pt-BR') : stats.nubank.proxima.toLocaleString('pt-BR')}</h2>
+                <h2 className="text-4xl font-black mb-2">R$ {nubankView === 'CURRENT' ? fmt(stats.nubank.atual) : fmt(stats.nubank.proxima)}</h2>
                 <p className="text-[10px] opacity-50">Vencimento dia 13</p>
             </div>
 
@@ -406,7 +406,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                     </div>
                 </div>
                 <p className="text-[10px] font-bold opacity-60 uppercase tracking-widest mb-1">{portoView === 'CURRENT' ? 'Fatura Atual (Aberta)' : 'Fatura Seguinte (Previsão)'}</p>
-                <h2 className="text-4xl font-black mb-2">R$ {portoView === 'CURRENT' ? stats.porto.atual.toLocaleString('pt-BR') : stats.porto.proxima.toLocaleString('pt-BR')}</h2>
+                <h2 className="text-4xl font-black mb-2">R$ {portoView === 'CURRENT' ? fmt(stats.porto.atual) : fmt(stats.porto.proxima)}</h2>
                 <p className="text-[10px] opacity-50">Vencimento dia 05</p>
             </div>
         </div>
@@ -420,7 +420,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                    <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center text-lg shadow-sm">{t.cardType === 'Porto' ? '🔵' : '🟣'}</div>
                    <div className="overflow-hidden"><p className="text-xs font-black text-[#521256] truncate">{t.description}</p><p className="text-[9px] font-bold opacity-50">{new Date(t.date).toLocaleDateString('pt-BR')}</p></div>
                 </div>
-                <span className="text-xs font-black text-[#521256] group-hover:text-[#f170c3]">R$ {t.amount.toLocaleString('pt-BR')}</span>
+                <span className="text-xs font-black text-[#521256] group-hover:text-[#f170c3]">R$ {fmt(t.amount)}</span>
               </div>
             ))}
             {stats.cardExpenses.length === 0 && (<p className="col-span-3 text-center py-2 text-xs font-bold opacity-30 italic">Nenhum gasto nesta fatura.</p>)}
@@ -441,7 +441,7 @@ const Dashboard: React.FC<DashboardProps> = ({
       />
 
       <TransactionModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onSave={handleSave} type={modalType} availableCategories={categories} onAddCategory={onAddCategory} onOpenCategoryManager={onOpenCategoryManager} />
-      {selectedCategory && ( <div className="fixed inset-0 bg-[#521256]/60 backdrop-blur-md z-[150] flex items-center justify-center p-4"><div className="bg-white p-8 rounded-2xl w-full max-w-md"><div className="flex justify-between mb-4"><h3 className="font-bold text-[#521256]">{selectedCategory}</h3><button onClick={() => setSelectedCategory(null)}>Fechar</button></div><div className="max-h-[60vh] overflow-y-auto">{categoryTransactions.map(t => (<div key={t.id} className="flex justify-between items-center py-2 border-b border-gray-100 gap-2"><span className="text-sm flex-1 truncate">{t.description}</span><span className="font-bold text-red-500 whitespace-nowrap">- R$ {t.amount.toLocaleString('pt-BR')}</span>{onDeleteTransaction && (<button onClick={() => handleDelete(t.id)} className="p-1.5 rounded-full text-[#521256]/30 hover:text-red-500 hover:bg-red-50 transition-colors flex-shrink-0" title="Excluir lançamento"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>)}</div>))}</div></div></div> )}
+      {selectedCategory && ( <div className="fixed inset-0 bg-[#521256]/60 backdrop-blur-md z-[150] flex items-center justify-center p-4"><div className="bg-white p-8 rounded-2xl w-full max-w-md"><div className="flex justify-between mb-4"><h3 className="font-bold text-[#521256]">{selectedCategory}</h3><button onClick={() => setSelectedCategory(null)}>Fechar</button></div><div className="max-h-[60vh] overflow-y-auto">{categoryTransactions.map(t => (<div key={t.id} className="flex justify-between items-center py-2 border-b border-gray-100 gap-2"><span className="text-sm flex-1 truncate">{t.description}</span><span className="font-bold text-red-500 whitespace-nowrap">- R$ {fmt(t.amount)}</span>{onDeleteTransaction && (<button onClick={() => handleDelete(t.id)} className="p-1.5 rounded-full text-[#521256]/30 hover:text-red-500 hover:bg-red-50 transition-colors flex-shrink-0" title="Excluir lançamento"><svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>)}</div>))}</div></div></div> )}
 
       {activeDetailType && (
         <div className="fixed inset-0 bg-[#521256]/60 backdrop-blur-md z-[150] flex items-center justify-center p-4 animate-in fade-in duration-200">
